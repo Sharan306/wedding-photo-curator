@@ -13,6 +13,7 @@ import numpy as np
 import streamlit as st
 import torch
 from PIL import Image
+from tkinter import filedialog, Tk
 
 try:
     import clip
@@ -241,6 +242,7 @@ def analyse_image(path: Path) -> Optional[Dict]:
 
     mp, res_score = compute_resolution(pil_img)
     face_count, face_score = compute_face_score(gray)
+    clip_score, clip_prompt = compute_clip_score(pil_img)
 
     return {
         "path": str(path),
@@ -252,6 +254,8 @@ def analyse_image(path: Path) -> Optional[Dict]:
         "contrast_raw": compute_contrast(gray),
         "face_count": face_count,
         "face_score": face_score,
+        "clip_score": clip_score,
+        "clip_prompt": clip_prompt,
     }
 
 
@@ -265,16 +269,16 @@ def _minmax_normalise(records: list[dict], key: str, out_key: str) -> None:
 
 
 def compute_final_scores(records: list[dict]) -> list[dict]:
-    """Normalises raw metrics, computes weighted composite scores, and ranks."""
+    """Normalises raw metrics, computes weighted hybrid scores (CLIP + OpenCV), and ranks."""
     _minmax_normalise(records, "sharpness_raw", "sharpness_norm")
     _minmax_normalise(records, "contrast_raw", "contrast_norm")
 
     for r in records:
         r["final_score"] = round(
-            SCORE_WEIGHTS["sharpness"] * r["sharpness_norm"]
+            SCORE_WEIGHTS["clip"] * r["clip_score"]
+            + SCORE_WEIGHTS["sharpness"] * r["sharpness_norm"]
             + SCORE_WEIGHTS["exposure"] * r["exposure_score"]
             + SCORE_WEIGHTS["resolution"] * r["resolution_score"]
-            + SCORE_WEIGHTS["contrast"] * r["contrast_norm"]
             + SCORE_WEIGHTS["faces"] * r["face_score"],
             4,
         )
@@ -391,6 +395,23 @@ def initialize_session_state() -> None:
         st.session_state.folder_path = ""
 
 
+def open_folder_picker() -> str:
+    """Open native macOS Finder folder picker using tkinter."""
+    try:
+        root = Tk()
+        root.withdraw()  # Hide the tkinter window
+        root.attributes('-topmost', True)  # Bring dialog to front
+        folder_path = filedialog.askdirectory(
+            title="Select Wedding Photos Folder",
+            initialdir=st.session_state.folder_path or str(Path.home()),
+        )
+        root.destroy()
+        return folder_path
+    except Exception as exc:
+        logger.error(f"Folder picker error: {exc}")
+        return ""
+
+
 def evaluate_image_batch(image_paths: List[Path]) -> List[Dict]:
     """Evaluate a batch of images and return scored results."""
     progress_bar = st.progress(0)
@@ -492,6 +513,10 @@ def display_photo_gallery(results: List[Dict]) -> None:
                     unsafe_allow_html=True,
                 )
 
+                # AI insight
+                if CLIP_AVAILABLE:
+                    st.caption(f"🤖 AI says: {photo_data['clip_prompt']}")
+
                 col_a, col_b = st.columns(2)
                 with col_a:
                     st.metric(
@@ -562,8 +587,13 @@ def main() -> None:
             placeholder="/path/to/wedding/photos",
         )
 
-        if st.button("📂 Browse Folder"):
-            st.info("Note: On Streamlit Cloud, use the text input to specify your folder path.")
+        if st.button("📂 Browse Folder", use_container_width=True):
+            selected_folder = open_folder_picker()
+            if selected_folder:
+                st.session_state.folder_path = selected_folder
+                st.rerun()
+            else:
+                st.warning("No folder selected.")
 
         st.markdown("---")
 

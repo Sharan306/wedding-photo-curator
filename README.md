@@ -17,31 +17,44 @@ Perfect for **wedding albums**, **event photography**, **travel collections**, a
 
 ## ✨ Features
 
-- 🎯 **Intelligent Quality Scoring** — Evaluates each photo across 5 metrics: sharpness, exposure, resolution, contrast, and face detection
-- 🖼️ **Interactive Visual Gallery** — Browse ranked photos with approve/reject controls in a beautiful, responsive UI
-- 📊 **Detailed Metrics Display** — See quality scores, megapixels, face counts, and raw metric values for each photo
-- 💾 **Smart Export** — Automatically copy your approved photos to a dedicated `BEST_PRINTS` folder
-- 📁 **Batch Processing** — Recursively scans and analyzes entire photo directories
-- 🚀 **Production-Ready** — Clean, well-commented code with comprehensive error handling
-- 🎨 **Web-Based Interface** — Modern Streamlit UI — no command-line skills required
+- 🤖 **AI-Powered Semantic Scoring** — CLIP vision-language model understands photo content (not just technical metrics)
+- 🎯 **Hybrid Intelligence** — Combines CLIP semantics (50%) with OpenCV metrics (50%)
+- 🖼️ **Interactive Visual Gallery** — Browse ranked photos with approve/reject controls
+- 💡 **AI Insights Per Photo** — "AI says: a candid emotional wedding moment" explains what CLIP sees
+- 📊 **Detailed Metrics Display** — CLIP score, sharpness, exposure, resolution, face detection
+- 💾 **Smart Curation** — Threshold-based selection ensures diverse portfolio, no burst duplicates
+- 🤝 **Perceptual Deduplication** — Removes near-identical consecutive shots automatically
+- 📁 **Native Folder Picker** — macOS Finder integration for seamless file selection
+- 🚀 **Fully Offline & Free** — No cloud APIs, no subscriptions, runs on CPU or GPU
+- 🎨 **Production UI** — Beautiful Streamlit app with real-time progress and responsive design
+- ⚙️ **Highly Customizable** — Adjust weights, prompts, thresholds to your workflow
 
 ---
 
 ## 🧠 How It Works
 
-Each photo is evaluated using a weighted combination of five quality metrics, normalized across your entire collection:
+Wedding Photo Curator uses a **hybrid AI approach** combining semantic understanding with computer vision:
 
-| Metric | Weight | Description |
-|--------|--------|-------------|
-| **Sharpness** | 35% | Measures edge clarity using Laplacian variance. Sharp photos are print-ready. |
-| **Exposure** | 25% | Assesses brightness balance, penalizing clipped shadows and blown highlights. |
-| **Resolution** | 15% | Scores megapixels relative to professional print standards (up to 24 MP). |
-| **Contrast** | 15% | Measures tonal separation using pixel intensity standard deviation. |
-| **Face Detection** | 10% | Detects human faces using Haar Cascade classifiers; rewards portraits & candids. |
+### Scoring Pipeline
 
-**Final Score** = 0.35×(Sharpness) + 0.25×(Exposure) + 0.15×(Resolution) + 0.15×(Contrast) + 0.10×(Faces)
+Each photo is evaluated using:
 
-All raw metrics are min-max normalized before weighting, ensuring consistent scoring across different collections.
+**1. CLIP Semantic Analysis (50%)**
+- Evaluates against positive prompts: "beautiful well-lit portrait", "candid emotional wedding moment", "sharp focused photo", "flattering angle"
+- Penalizes negatives: "blurry dark poorly composed photo"
+- Returns interpretable AI insight: *"AI says: a candid emotional wedding moment"*
+
+**2. Computer Vision Metrics (50%)**
+- **Sharpness** (20%) — Laplacian variance for edge clarity
+- **Exposure** (15%) — Histogram analysis, penalizes clipping
+- **Resolution** (10%) — Megapixels relative to print standards
+- **Face Detection** (5%) — Rewards portraits and candids
+
+### Selection Strategy
+
+- **Threshold-Based** (when CLIP available) — Selects all photos scoring ≥0.25
+- **Diversity Filtering** — Perceptual hashing removes near-duplicates, keeping highest-scoring from each burst
+- **Result** — Portfolio of diverse, high-quality moments (not 50 variations of the same pose)
 
 ---
 
@@ -72,15 +85,20 @@ All raw metrics are min-max normalized before weighting, ensuring consistent sco
 ```bash
 streamlit run app.py
 ```
-Then enter your photo folder path in the sidebar and click **Analyze Photos**. Browse results in the interactive gallery, approve/reject photos, and export.
+Then:
+1. Click **"📂 Browse Folder"** — Opens native macOS Finder picker
+2. Select your photo directory → Auto-fills in sidebar
+3. Click **"🚀 Analyze Photos"** — CLIP + OpenCV scoring begins
+4. **Review** the AI-powered gallery with insights
+5. **Approve/Reject** photos and export
 
 **Option 2: Command-Line Batch Analysis**
 ```bash
 python analyze_photos.py /path/to/wedding/photos
 ```
 Outputs:
-- `photo_analysis.csv` — Ranked report with all metrics
-- `BEST_PRINTS/` folder — Top 50 photos copied automatically
+- `photo_analysis.csv` — Detailed metrics + CLIP insights for every photo
+- `BEST_PRINTS/` folder — All photos scoring above quality threshold
 
 ---
 
@@ -93,23 +111,29 @@ Outputs:
    streamlit run app.py
    ```
 
-2. **Enter your photo folder path** in the sidebar (absolute path)
+2. **Select your photo folder:**
+   - Click "📂 Browse Folder" for native macOS Finder dialog
+   - Or manually paste folder path into text input
 
-3. **Click "Analyze Photos"** — Processing bar shows progress
+3. **Analyze:**
+   - Click "🚀 Analyze Photos"
+   - Watch real-time progress as CLIP scores each image
+   - Perceptual hashing automatically removes burst duplicates
 
-4. **Review the summary stats:**
+4. **Review summary stats:**
    - Total photos analyzed
-   - Highest score achieved
-   - Average collection quality
+   - Highest/average scores
+   - Photos filtered for diversity
 
-5. **Browse the photo gallery:**
-   - Photos are ranked by composite score
-   - View detailed metrics per photo
-   - Click checkboxes to approve or reject
+5. **Browse the AI gallery:**
+   - Photos ranked by hybrid score
+   - Each card shows: rank, thumbnail, composite score, sharpness, face count, resolution
+   - **AI Insight** — "AI says: [matching prompt]" shows what CLIP understood
+   - Approve ✓ or Reject ✗ individual photos
 
-6. **Export approved photos:**
-   - All approved photos are copied to `BEST_PRINTS/`
-   - Ready for client review or printing
+6. **Export curated collection:**
+   - All approved photos copied to `BEST_PRINTS/`
+   - Ready for client review or album creation
 
 ### Via Command Line
 
@@ -117,7 +141,7 @@ Outputs:
 python analyze_photos.py /path/to/photos --output-csv results.csv
 ```
 
-The `BEST_PRINTS` folder will be created in your photo directory with the top 50 images.
+The `BEST_PRINTS` folder will be created with all photos above the quality threshold.
 
 ---
 
@@ -126,10 +150,13 @@ The `BEST_PRINTS` folder will be created in your photo directory with the top 50
 | Component | Purpose |
 |-----------|---------|
 | **Python 3.8+** | Core language |
+| **CLIP (OpenAI)** | Semantic image understanding, vision-language model |
+| **PyTorch** | Deep learning framework for CLIP inference |
 | **OpenCV** | Image processing, face detection, Laplacian sharpness |
-| **Pillow (PIL)** | Image loading and manipulation |
+| **Pillow (PIL)** | Image loading and perceptual hashing |
+| **ImageHash** | Perceptual hashing for diversity filtering |
 | **NumPy** | Numerical computations and normalization |
-| **Streamlit** | Interactive web UI |
+| **Streamlit** | Interactive web UI with native folder picker |
 | **tqdm** | Progress bars for batch operations |
 
 ---
@@ -149,24 +176,35 @@ The `BEST_PRINTS` folder will be created in your photo directory with the top 50
 ### CSV Report (`photo_analysis.csv`)
 
 ```
-rank,filename,final_score,sharpness_raw,exposure_score,resolution_mp,contrast_raw,face_count,path
-1,photo_001.jpg,0.8432,285.42,0.92,24.3,68.5,2,/path/to/photo_001.jpg
-2,photo_015.jpg,0.8201,278.15,0.89,18.5,72.1,1,/path/to/photo_015.jpg
-3,photo_042.jpg,0.7956,265.30,0.85,21.0,65.3,0,/path/to/photo_042.jpg
+rank,filename,final_score,clip_score,clip_prompt,sharpness_raw,exposure_score,resolution_mp,face_count,path
+1,IMG_0847.jpg,0.8124,0.89,"a candid emotional wedding moment",298.5,0.92,24.3,2,/photos/IMG_0847.jpg
+2,IMG_0891.jpg,0.7856,0.85,"a beautiful well-lit portrait with great composition",287.2,0.88,21.5,1,/photos/IMG_0891.jpg
+3,IMG_0742.jpg,0.7642,0.81,"a sharp focused photo with good lighting",275.8,0.85,18.0,0,/photos/IMG_0742.jpg
 ```
+
+### Web Gallery Display
+
+Each photo card shows:
+- **Rank badge** — `#1, #2, #3`
+- **Thumbnail** — Preview of the photo
+- **Score** — Color-coded composite score (red < 0.5, orange 0.5-0.7, green ≥ 0.7)
+- **🤖 AI says** — *"a candid emotional wedding moment"* — CLIP's interpretation
+- **Sharpness & Face Count** — Raw metric values
+- **Resolution** — Megapixels
+- **Approve ✓ / Reject ✗** — Curation controls
 
 ### Directory Structure After Export
 
 ```
 wedding-photos/
-├── photo_001.jpg
-├── photo_015.jpg
-├── photo_042.jpg
-├── ... (1997 more original photos)
+├── IMG_0001.jpg
+├── IMG_0015.jpg
+├── ... (all original photos)
 └── BEST_PRINTS/
-    ├── photo_001.jpg          ← Top 50 curated photos
-    ├── photo_015.jpg
-    └── photo_042.jpg
+    ├── IMG_0847.jpg          ← All approved, diverse moments
+    ├── IMG_0891.jpg             (no burst duplicates)
+    ├── IMG_0742.jpg
+    └── ... (40+ more unique shots)
 ```
 
 ---
@@ -178,19 +216,46 @@ wedding-photos/
 Edit the `SCORE_WEIGHTS` dictionary in `app.py` or `analyze_photos.py`:
 
 ```python
-SCORE_WEIGHTS = {
-    "sharpness":  0.35,   # Increase for studio work
-    "exposure":   0.25,   # Increase for outdoor shoots
-    "resolution": 0.15,   # Higher for print-focused workflows
-    "contrast":   0.15,
-    "faces":      0.10,   # Increase for portrait-heavy collections
+SCORE_WEIGHTS_HYBRID = {
+    "clip":       0.50,   # AI semantic understanding (most powerful)
+    "sharpness":  0.20,   # Laplacian edge clarity
+    "exposure":   0.15,   # Histogram-based brightness
+    "resolution": 0.10,   # Megapixels
+    "faces":      0.05,   # Face detection bonus
 }
 ```
 
-### Change Top-K Export Count
+### Modify CLIP Prompts
+
+Customize semantic scoring by editing prompts in `app.py`/`analyze_photos.py`:
 
 ```python
-TOP_K = 50  # Change to 100, 25, etc.
+CLIP_PROMPTS = [
+    "a beautiful well-lit portrait with great composition",
+    "a candid emotional wedding moment",
+    # Add your own...
+]
+
+CLIP_NEGATIVE_PROMPTS = [
+    "a blurry dark or poorly composed photo",
+    # Add your own...
+]
+```
+
+### Adjust Similarity Threshold
+
+Change perceptual hashing threshold (0-100, higher = stricter duplicate removal):
+
+```python
+filter_similar_photos(results, similarity_threshold=85.0)  # More strict
+```
+
+### Threshold-Based Selection
+
+Modify the quality threshold for BEST_PRINTS export:
+
+```python
+CLIP_SCORE_THRESHOLD = 0.25  # Lower = include more photos
 ```
 
 ---
@@ -233,14 +298,17 @@ For issues, feature requests, or questions:
 
 ## 🎓 Technical Highlights
 
-This project demonstrates:
+This project demonstrates advanced computer vision and AI:
 
-- **Computer Vision**: Image analysis using OpenCV Haar Cascades and Laplacian edge detection
-- **Data Normalization**: Min-max scaling across batch datasets
-- **Web Development**: Modern Python web UI with Streamlit
-- **Software Engineering**: Clean architecture, error handling, logging, type hints
-- **Batch Processing**: Efficient recursive file discovery and parallel-safe operations
-- **User Experience**: Intuitive UI design with real-time feedback and progress tracking
+- **Vision-Language Model (CLIP)** — Semantic understanding of image content using OpenAI's CLIP
+- **Hybrid Scoring** — Combines AI semantics with traditional computer vision metrics
+- **Perceptual Hashing** — Efficient near-duplicate detection (not pixel-perfect matching)
+- **Image Processing** — OpenCV Haar Cascades, Laplacian edge detection, histogram analysis
+- **GPU Acceleration** — Automatic CUDA detection for PyTorch; CPU fallback
+- **Data Normalization** — Min-max scaling for consistent batch-relative scoring
+- **Modern Web Development** — Streamlit with native OS file dialogs, real-time progress
+- **Production-Grade Code** — Clean architecture, error handling, logging, type hints
+- **Offline & Free** — Runs completely locally; no cloud APIs or fees
 
 ---
 
