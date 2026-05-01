@@ -1,0 +1,100 @@
+# ── Photos & raw camera formats ──────────────────────────────────────────────
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.tif
+*.webp
+*.heic
+*.heif
+
+# Raw camera formats
+*.raw
+*.cr2
+*.cr3
+*.nef
+*.arw
+*.dng
+*.orf
+*.rw2
+*.pef
+*.srw
+*.x3f
+*.raf
+
+# Output folders and generated files
+BEST_PRINTS/
+photo_scores.csv
+photo_analysis.csv
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# Testing
+.tox/
+.coverage
+.coverage.*
+.cache
+htmlcov/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ── IDE / editors ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+*.log
+.env
+.env.local
