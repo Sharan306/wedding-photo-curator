@@ -1,4 +1,4 @@
-# 💍 Wedding Photo Curator
+# Wedding Photo Curator
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue?style=flat&logo=python)](https://www.python.org/)
 [![OpenCV](https://img.shields.io/badge/OpenCV-4.8%2B-brightgreen?style=flat&logo=opencv)](https://opencv.org/)
@@ -7,7 +7,7 @@
 
 ---
 
-## 📋 Overview
+## Overview
 
 **Wedding Photo Curator** is an AI-powered application that automatically analyzes and selects the best photos from large collections using computer vision and machine learning techniques. Instead of manually reviewing hundreds (or thousands) of wedding photos, photographers and studios can now leverage intelligent scoring metrics to curate their best prints in minutes.
 
@@ -15,23 +15,23 @@ Perfect for **wedding albums**, **event photography**, **travel collections**, a
 
 ---
 
-## ✨ Features
+## Features
 
-- 🤖 **AI-Powered Semantic Scoring** — CLIP vision-language model understands photo content (not just technical metrics)
-- 🎯 **Hybrid Intelligence** — Combines CLIP semantics (50%) with OpenCV metrics (50%)
-- 🖼️ **Interactive Visual Gallery** — Browse ranked photos with approve/reject controls
-- 💡 **AI Insights Per Photo** — "AI says: a candid emotional wedding moment" explains what CLIP sees
-- 📊 **Detailed Metrics Display** — CLIP score, sharpness, exposure, resolution, face detection
-- 💾 **Smart Curation** — Threshold-based selection ensures diverse portfolio, no burst duplicates
-- 🤝 **Perceptual Deduplication** — Removes near-identical consecutive shots automatically
-- 📁 **Native Folder Picker** — macOS Finder integration for seamless file selection
-- 🚀 **Fully Offline & Free** — No cloud APIs, no subscriptions, runs on CPU or GPU
-- 🎨 **Production UI** — Beautiful Streamlit app with real-time progress and responsive design
-- ⚙️ **Highly Customizable** — Adjust weights, prompts, thresholds to your workflow
+- **AI-Powered Semantic Scoring** — CLIP vision-language model understands photo content (not just technical metrics)
+- **Hybrid Intelligence** — Combines CLIP semantics (50%) with OpenCV metrics (50%)
+- **Interactive Visual Gallery** — Browse ranked photos with approve/reject controls
+- **AI Insights Per Photo** — "AI says: a candid emotional wedding moment" explains what CLIP sees
+- **Detailed Metrics Display** — CLIP score, sharpness, exposure, resolution, face detection
+- **Smart Curation** — Threshold-based selection ensures diverse portfolio, no burst duplicates
+- **Perceptual Deduplication** — Removes near-identical consecutive shots automatically
+- **Native Folder Picker** — macOS Finder integration for seamless file selection
+- **Fully Offline & Free** — No cloud APIs, no subscriptions, runs on CPU or GPU
+- **Production UI** — Beautiful Streamlit app with real-time progress and responsive design
+- **Highly Customizable** — Adjust weights, prompts, thresholds to your workflow
 
 ---
 
-## 🧠 How It Works
+## How It Works
 
 Wedding Photo Curator uses a **hybrid AI approach** combining semantic understanding with computer vision:
 
@@ -58,7 +58,7 @@ Each photo is evaluated using:
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -86,9 +86,9 @@ Each photo is evaluated using:
 streamlit run app.py
 ```
 Then:
-1. Click **"📂 Browse Folder"** — Opens native macOS Finder picker
+1. Click **"Browse Folder"** — Opens native macOS Finder picker
 2. Select your photo directory → Auto-fills in sidebar
-3. Click **"🚀 Analyze Photos"** — CLIP + OpenCV scoring begins
+3. Click **"Analyze Photos"** — CLIP + OpenCV scoring begins
 4. **Review** the AI-powered gallery with insights
 5. **Approve/Reject** photos and export
 
@@ -102,7 +102,7 @@ Outputs:
 
 ---
 
-## 📸 Usage Guide
+## Usage Guide
 
 ### Via Streamlit Web App
 
@@ -112,11 +112,11 @@ Outputs:
    ```
 
 2. **Select your photo folder:**
-   - Click "📂 Browse Folder" for native macOS Finder dialog
+   - Click "Browse Folder" for native macOS Finder dialog
    - Or manually paste folder path into text input
 
 3. **Analyze:**
-   - Click "🚀 Analyze Photos"
+   - Click "Analyze Photos"
    - Watch real-time progress as CLIP scores each image
    - Perceptual hashing automatically removes burst duplicates
 
@@ -129,7 +129,7 @@ Outputs:
    - Photos ranked by hybrid score
    - Each card shows: rank, thumbnail, composite score, sharpness, face count, resolution
    - **AI Insight** — "AI says: [matching prompt]" shows what CLIP understood
-   - Approve ✓ or Reject ✗ individual photos
+   - Approve or Reject individual photos
 
 6. **Export curated collection:**
    - All approved photos copied to `BEST_PRINTS/`
@@ -145,7 +145,7 @@ The `BEST_PRINTS` folder will be created with all photos above the quality thres
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Component | Purpose |
 |-----------|---------|
@@ -161,17 +161,17 @@ The `BEST_PRINTS` folder will be created with all photos above the quality thres
 
 ---
 
-## 💼 Use Cases
+## Use Cases
 
-- 📷 **Wedding Photography Studios** — Rapidly curate albums from 2000+ photos
-- 🎉 **Event Photographers** — Filter high-quality shots from large events
-- ✈️ **Travel Bloggers** — Select print-worthy photos from trips
-- 📚 **Photo Collections** — Organize and rank personal photo archives
-- 🎓 **Photography Students** — Learn computer vision applied to real-world problems
+- **Wedding Photography Studios** — Rapidly curate albums from 2000+ photos
+- **Event Photographers** — Filter high-quality shots from large events
+- **Travel Bloggers** — Select print-worthy photos from trips
+- **Photo Collections** — Organize and rank personal photo archives
+- **Photography Students** — Learn computer vision applied to real-world problems
 
 ---
 
-## 📊 Sample Output
+## Sample Output
 
 ### CSV Report (`photo_analysis.csv`)
 
@@ -188,10 +188,10 @@ Each photo card shows:
 - **Rank badge** — `#1, #2, #3`
 - **Thumbnail** — Preview of the photo
 - **Score** — Color-coded composite score (red < 0.5, orange 0.5-0.7, green ≥ 0.7)
-- **🤖 AI says** — *"a candid emotional wedding moment"* — CLIP's interpretation
+- **AI says** — *"a candid emotional wedding moment"* — CLIP's interpretation
 - **Sharpness & Face Count** — Raw metric values
 - **Resolution** — Megapixels
-- **Approve ✓ / Reject ✗** — Curation controls
+- **Approve / Reject** — Curation controls
 
 ### Directory Structure After Export
 
@@ -209,7 +209,7 @@ wedding-photos/
 
 ---
 
-## 🔧 Configuration & Customization
+## Configuration & Customization
 
 ### Adjust Scoring Weights
 
@@ -260,7 +260,7 @@ CLIP_SCORE_THRESHOLD = 0.25  # Lower = include more photos
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Areas for enhancement:
 
@@ -282,13 +282,13 @@ Contributions are welcome! Areas for enhancement:
 
 ---
 
-## 📝 License
+## License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 📧 Questions & Support
+## Questions & Support
 
 For issues, feature requests, or questions:
 - Open an [Issue](https://github.com/yourusername/wedding-photo-curator/issues)
@@ -296,7 +296,7 @@ For issues, feature requests, or questions:
 
 ---
 
-## 🎓 Technical Highlights
+## Technical Highlights
 
 This project demonstrates advanced computer vision and AI:
 

@@ -472,7 +472,7 @@ def display_photo_gallery(results: List[Dict]) -> None:
     """Display ranked photos in a gallery grid with selection toggles."""
     results_sorted = sorted(results, key=lambda x: x["final_score"], reverse=True)
 
-    st.subheader("📸 Photo Gallery")
+    st.subheader("Photo Gallery")
     st.markdown("---")
 
     cols_per_row = 3
@@ -515,7 +515,7 @@ def display_photo_gallery(results: List[Dict]) -> None:
 
                 # AI insight
                 if CLIP_AVAILABLE:
-                    st.caption(f"🤖 AI says: {photo_data['clip_prompt']}")
+                    st.caption(f"AI says: {photo_data['clip_prompt']}")
 
                 col_a, col_b = st.columns(2)
                 with col_a:
@@ -574,20 +574,20 @@ def main() -> None:
     initialize_session_state()
 
     # Header
-    st.title("💍 Wedding Photo Curator")
+    st.title("Wedding Photo Curator")
     st.markdown("AI-powered wedding photo selection and ranking system")
     st.markdown("---")
 
     # Sidebar for configuration
     with st.sidebar:
-        st.header("⚙️ Configuration")
+        st.header("Configuration")
         folder_input = st.text_input(
-            "📁 Enter photo folder path:",
+            "Enter photo folder path:",
             value=st.session_state.folder_path,
             placeholder="/path/to/wedding/photos",
         )
 
-        if st.button("📂 Browse Folder", use_container_width=True):
+        if st.button("Browse Folder", use_container_width=True):
             selected_folder = open_folder_picker()
             if selected_folder:
                 st.session_state.folder_path = selected_folder
@@ -597,7 +597,7 @@ def main() -> None:
 
         st.markdown("---")
 
-        if st.button("🚀 Analyze Photos", type="primary", use_container_width=True):
+        if st.button("Analyze Photos", type="primary", use_container_width=True):
             if not folder_input:
                 st.error("Please enter a folder path.")
             else:
@@ -614,14 +614,14 @@ def main() -> None:
                         st.session_state.analysis_results = results
                         st.session_state.folder_path = folder_input
                         st.session_state.approved_photos = set()
-                        st.success("✓ Analysis complete!")
+                        st.success("Analysis complete!")
 
     # Main content
     if st.session_state.analysis_results:
         results = st.session_state.analysis_results
 
         # Summary statistics
-        st.subheader("📊 Analysis Summary")
+        st.subheader("Analysis Summary")
         display_summary_stats(results)
         st.markdown("---")
 
@@ -630,13 +630,13 @@ def main() -> None:
         st.markdown("---")
 
         # Export section
-        st.subheader("💾 Export Approved Photos")
+        st.subheader("Export Approved Photos")
         approved_count = len(st.session_state.approved_photos)
         st.info(f"Currently selected: {approved_count} photos")
 
         if approved_count > 0:
             if st.button(
-                f"📥 Export {approved_count} Approved Photos",
+                f"Export {approved_count} Approved Photos",
                 type="primary",
                 use_container_width=True,
             ):
@@ -644,7 +644,7 @@ def main() -> None:
         else:
             st.warning("Select photos to approve before exporting.")
     else:
-        st.info("👈 Enter a folder path and click 'Analyze Photos' to get started.")
+        st.info("Enter a folder path and click 'Analyze Photos' to get started.")
 
 
 if __name__ == "__main__":
