@@ -8,9 +8,17 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import cv2
+import imagehash
 import numpy as np
 import streamlit as st
+import torch
 from PIL import Image
+
+try:
+    import clip
+    CLIP_AVAILABLE = True
+except ImportError:
+    CLIP_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,13 +26,26 @@ logger = logging.getLogger(__name__)
 # Configuration
 BEST_PRINTS_DIR = "BEST_PRINTS"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp"}
+CLIP_SCORE_THRESHOLD = 0.25
+
+# CLIP prompts for semantic scoring
+CLIP_PROMPTS = [
+    "a beautiful well-lit portrait with great composition",
+    "a sharp focused photo with good lighting",
+    "a candid emotional wedding moment",
+    "a beautiful pose with flattering angle",
+]
+
+CLIP_NEGATIVE_PROMPTS = [
+    "a blurry dark or poorly composed photo",
+]
 
 SCORE_WEIGHTS = {
-    "sharpness": 0.35,
-    "exposure": 0.25,
-    "resolution": 0.15,
-    "contrast": 0.15,
-    "faces": 0.10,
+    "clip": 0.50,
+    "sharpness": 0.20,
+    "exposure": 0.15,
+    "resolution": 0.10,
+    "faces": 0.05,
 }
 
 # Streamlit page configuration
@@ -77,6 +98,81 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+# ============================================================================
+# CLIP Model (Semantic Scoring)
+# ============================================================================
+
+_clip_model = None
+_clip_preprocess = None
+_clip_device = None
+
+
+@st.cache_resource
+def load_clip_model():
+    """Load CLIP model on first use (lazy loading with caching)."""
+    if not CLIP_AVAILABLE:
+        return None, None, None
+    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    return model, preprocess, device
+
+
+def compute_clip_score(pil_img: Image.Image) -> tuple[float, str]:
+    """
+    Compute CLIP semantic score for an image.
+    Returns (score, best_matching_prompt).
+    """
+    if not CLIP_AVAILABLE:
+        return 0.5, "CLIP unavailable"
+    
+    try:
+        model, preprocess, device = load_clip_model()
+        if model is None:
+            return 0.5, "CLIP not loaded"
+        
+        # Encode image
+        image_tensor = preprocess(pil_img).unsqueeze(0).to(device)
+        with torch.no_grad():
+            image_features = model.encode_image(image_tensor)
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+        
+        # Encode positive prompts
+        pos_texts = [f"This is {p}" for p in CLIP_PROMPTS]
+        pos_tokens = clip.tokenize(pos_texts).to(device)
+        with torch.no_grad():
+            pos_features = model.encode_text(pos_tokens)
+            pos_features /= pos_features.norm(dim=-1, keepdim=True)
+        
+        # Encode negative prompts
+        neg_texts = [f"This is {p}" for p in CLIP_NEGATIVE_PROMPTS]
+        neg_tokens = clip.tokenize(neg_texts).to(device)
+        with torch.no_grad():
+            neg_features = model.encode_text(neg_tokens)
+            neg_features /= neg_features.norm(dim=-1, keepdim=True)
+        
+        # Compute similarities
+        pos_similarity = image_features @ pos_features.T
+        neg_similarity = image_features @ neg_features.T
+        
+        pos_max = pos_similarity.max().item()
+        neg_max = neg_similarity.max().item() if len(CLIP_NEGATIVE_PROMPTS) > 0 else 0.0
+        
+        # Score: positive - negative, normalized to [0, 1]
+        raw_score = pos_max - (0.3 * neg_max)
+        score = max(0.0, min(1.0, raw_score))
+        
+        # Find best matching positive prompt
+        best_idx = pos_similarity[0].argmax().item()
+        best_prompt = CLIP_PROMPTS[best_idx]
+        
+        return score, best_prompt
+    
+    except Exception as exc:
+        logger.warning(f"CLIP scoring error: {exc}")
+        return 0.5, "CLIP error"
 
 
 # ============================================================================
@@ -200,6 +296,87 @@ def scan_images(photo_dir: Path) -> list[Path]:
 
 
 # ============================================================================
+# Diversity Filtering (Near-Duplicate Removal)
+# ============================================================================
+
+def compute_perceptual_hash(path: Path) -> Optional[imagehash.ImageHash]:
+    """Compute perceptual hash for an image."""
+    try:
+        pil_img = Image.open(path).convert("RGB")
+        return imagehash.phash(pil_img, hash_size=8)
+    except Exception as exc:
+        logger.warning(f"Could not hash {path.name}: {exc}")
+        return None
+
+
+def hash_similarity(hash1: imagehash.ImageHash, hash2: imagehash.ImageHash) -> float:
+    """
+    Compute similarity between two perceptual hashes as a percentage (0-100).
+    Hamming distance 0 = identical (100% similar).
+    Hamming distance 64 = completely different (0% similar).
+    """
+    max_distance = 64  # 8x8 hash = 64 bits
+    hamming_dist = hash1 - hash2
+    similarity = max(0, 100 * (1 - hamming_dist / max_distance))
+    return similarity
+
+
+def filter_similar_photos(records: list[dict], similarity_threshold: float = 90.0) -> list[dict]:
+    """
+    Remove near-duplicate photos, keeping only the highest-scoring from each group.
+    
+    Args:
+        records: Sorted list of photo records (highest score first)
+        similarity_threshold: Minimum similarity % to consider photos as duplicates (0-100)
+    
+    Returns:
+        Filtered list with duplicates removed, maintaining original sort order
+    """
+    if not records:
+        return records
+
+    # Compute hashes for all photos
+    hashes = {}
+    for r in records:
+        path = Path(r["path"])
+        hash_obj = compute_perceptual_hash(path)
+        if hash_obj:
+            hashes[r["path"]] = hash_obj
+
+    # Filter: for each kept photo, remove similar photos with lower scores
+    kept = []
+    removed = set()
+
+    for record in records:
+        if record["path"] in removed:
+            continue
+
+        kept.append(record)
+        kept_hash = hashes.get(record["path"])
+        if not kept_hash:
+            continue
+
+        # Compare against all remaining photos
+        for other_record in records:
+            if other_record["path"] in removed or other_record["path"] == record["path"]:
+                continue
+
+            other_hash = hashes.get(other_record["path"])
+            if not other_hash:
+                continue
+
+            similarity = hash_similarity(kept_hash, other_hash)
+            if similarity >= similarity_threshold:
+                removed.add(other_record["path"])
+
+    duplicate_count = len(records) - len(kept)
+    if duplicate_count > 0:
+        logger.info(f"Filtered {duplicate_count} near-duplicate photos")
+
+    return kept
+
+
+# ============================================================================
 # Streamlit UI
 # ============================================================================
 
@@ -237,6 +414,8 @@ def evaluate_image_batch(image_paths: List[Path]) -> List[Dict]:
     # Compute final scores
     if raw_results:
         results = compute_final_scores(raw_results)
+        # Filter near-duplicate photos for diversity
+        results = filter_similar_photos(results, similarity_threshold=90.0)
     else:
         results = []
 

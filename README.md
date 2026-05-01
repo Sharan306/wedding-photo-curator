@@ -1,153 +1,247 @@
-# Wedding Photo Analyzer
+# 💍 Wedding Photo Curator
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![OpenCV](https://img.shields.io/badge/OpenCV-4.8%2B-green?logo=opencv&logoColor=white)](https://opencv.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000)](https://github.com/psf/black)
-
-> **Automatically score, rank, and export your best wedding photos using computer vision — no manual culling required.**
-
-Wedding photographers typically shoot 1,000–3,000 photos per event. This tool analyses every image across five quality dimensions and delivers a ranked shortlist in minutes, saving hours of manual review.
+[![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue?style=flat&logo=python)](https://www.python.org/)
+[![OpenCV](https://img.shields.io/badge/OpenCV-4.8%2B-brightgreen?style=flat&logo=opencv)](https://opencv.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-ff69b4?style=flat&logo=streamlit)](https://streamlit.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](LICENSE)
 
 ---
 
-## Features
+## 📋 Overview
 
-- **Recursive scanning** — processes entire folder trees, any nesting depth
-- **5-metric quality scoring** — sharpness, exposure, resolution, contrast, face detection
-- **Batch-normalised ranking** — scores are calibrated across your full collection, not arbitrary thresholds
-- **Ranked CSV report** — sortable spreadsheet with per-metric breakdown for every photo
-- **Auto-export** — top N photos copied to a `BEST_PRINTS/` folder, ready for client proofing
-- **Progress bar** — live feedback with `tqdm` for large batches
-- **Graceful error handling** — corrupted or unreadable files are skipped with a warning
+**Wedding Photo Curator** is an AI-powered application that automatically analyzes and selects the best photos from large collections using computer vision and machine learning techniques. Instead of manually reviewing hundreds (or thousands) of wedding photos, photographers and studios can now leverage intelligent scoring metrics to curate their best prints in minutes.
+
+Perfect for **wedding albums**, **event photography**, **travel collections**, and any scenario where rapid photo selection and quality assessment is needed.
 
 ---
 
-## Scoring Model
+## ✨ Features
 
-Each photo receives a composite score from 0.0 to 1.0 using the following weighted metrics:
-
-| Metric       | Weight | Method                                          |
-|--------------|--------|-------------------------------------------------|
-| Sharpness    | 35%    | Laplacian variance (higher = sharper edges)     |
-| Exposure     | 25%    | Histogram analysis, penalises clipping          |
-| Resolution   | 15%    | Megapixels, normalised to 24 MP ceiling         |
-| Contrast     | 15%    | Pixel intensity standard deviation              |
-| Face Detection | 10%  | Haar cascade frontal face detector              |
-
-Sharpness and contrast are **min-max normalised** across the full batch before scoring, so the ranking is relative to the photos you provide.
+- 🎯 **Intelligent Quality Scoring** — Evaluates each photo across 5 metrics: sharpness, exposure, resolution, contrast, and face detection
+- 🖼️ **Interactive Visual Gallery** — Browse ranked photos with approve/reject controls in a beautiful, responsive UI
+- 📊 **Detailed Metrics Display** — See quality scores, megapixels, face counts, and raw metric values for each photo
+- 💾 **Smart Export** — Automatically copy your approved photos to a dedicated `BEST_PRINTS` folder
+- 📁 **Batch Processing** — Recursively scans and analyzes entire photo directories
+- 🚀 **Production-Ready** — Clean, well-commented code with comprehensive error handling
+- 🎨 **Web-Based Interface** — Modern Streamlit UI — no command-line skills required
 
 ---
 
-## Requirements
+## 🧠 How It Works
 
-- Python 3.10+
-- `opencv-python`, `Pillow`, `numpy`, `tqdm`
+Each photo is evaluated using a weighted combination of five quality metrics, normalized across your entire collection:
+
+| Metric | Weight | Description |
+|--------|--------|-------------|
+| **Sharpness** | 35% | Measures edge clarity using Laplacian variance. Sharp photos are print-ready. |
+| **Exposure** | 25% | Assesses brightness balance, penalizing clipped shadows and blown highlights. |
+| **Resolution** | 15% | Scores megapixels relative to professional print standards (up to 24 MP). |
+| **Contrast** | 15% | Measures tonal separation using pixel intensity standard deviation. |
+| **Face Detection** | 10% | Detects human faces using Haar Cascade classifiers; rewards portraits & candids. |
+
+**Final Score** = 0.35×(Sharpness) + 0.25×(Exposure) + 0.15×(Resolution) + 0.15×(Contrast) + 0.10×(Faces)
+
+All raw metrics are min-max normalized before weighting, ensuring consistent scoring across different collections.
 
 ---
 
-## Installation
+## 🚀 Quick Start
 
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/yourusername/wedding-photo-curator.git
+   cd wedding-photo-curator
+   ```
+
+2. **Create a virtual environment:**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Usage
+
+**Option 1: Web Interface (Recommended)**
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-username/wedding-photo-analyzer.git
-cd wedding-photo-analyzer
-
-# 2. Create and activate a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate        # macOS / Linux
-# .venv\Scripts\activate         # Windows
-
-# 3. Install dependencies
-pip install -r requirements.txt
+streamlit run app.py
 ```
+Then enter your photo folder path in the sidebar and click **Analyze Photos**. Browse results in the interactive gallery, approve/reject photos, and export.
 
----
-
-## Usage
-
+**Option 2: Command-Line Batch Analysis**
 ```bash
-# Analyse all photos in a folder (outputs CSV + copies top 50)
 python analyze_photos.py /path/to/wedding/photos
-
-# Export top 30 instead of 50
-python analyze_photos.py /path/to/wedding/photos --top 30
-
-# Save the CSV to a custom location
-python analyze_photos.py /path/to/wedding/photos --output results/report.csv
-
-# Score and rank only — skip copying to BEST_PRINTS
-python analyze_photos.py /path/to/wedding/photos --no-copy
 ```
-
-### Arguments
-
-| Argument     | Description                                              | Default                          |
-|--------------|----------------------------------------------------------|----------------------------------|
-| `photo_dir`  | Root folder of wedding photos (required)                 | —                                |
-| `--top N`    | Number of top photos to copy to `BEST_PRINTS/`           | `50`                             |
-| `--output`   | CSV report output path                                   | `<photo_dir>/photo_scores.csv`   |
-| `--no-copy`  | Skip the `BEST_PRINTS/` export step                      | `false`                          |
+Outputs:
+- `photo_analysis.csv` — Ranked report with all metrics
+- `BEST_PRINTS/` folder — Top 50 photos copied automatically
 
 ---
 
-## Sample Output
+## 📸 Usage Guide
 
-### Terminal
+### Via Streamlit Web App
 
-```
-=======================================================
-  Wedding Photo Analyzer
-=======================================================
-  Folder : /Users/photographer/events/smith-wedding
-  Top N  : 50
-  Output : /Users/photographer/events/smith-wedding/photo_scores.csv
-=======================================================
+1. **Launch the app:**
+   ```bash
+   streamlit run app.py
+   ```
 
-Found 1,847 images. Analysing...
+2. **Enter your photo folder path** in the sidebar (absolute path)
 
-Scoring: 100%|████████████████| 1847/1847 [03:12<00:00,  9.6 photo/s]
+3. **Click "Analyze Photos"** — Processing bar shows progress
 
-Ranked report saved  ->  /Users/photographer/events/smith-wedding/photo_scores.csv
+4. **Review the summary stats:**
+   - Total photos analyzed
+   - Highest score achieved
+   - Average collection quality
 
-Top 10 Photos
-Rank   Score    Faces   MP      Filename
-----------------------------------------------------------------------
-1      0.8941   3       24.2    DSC_0847.jpg
-2      0.8812   2       24.2    DSC_1203.jpg
-3      0.8754   4       24.2    DSC_0612.jpg
-4      0.8691   2       24.2    DSC_1455.jpg
-5      0.8634   1       18.1    DSC_0391.jpg
-...
+5. **Browse the photo gallery:**
+   - Photos are ranked by composite score
+   - View detailed metrics per photo
+   - Click checkboxes to approve or reject
 
-Copying top 50 photos  ->  /Users/photographer/events/smith-wedding/BEST_PRINTS
-Copying: 100%|████████████████| 50/50 [00:02<00:00, 22.4 file/s]
-Done. 50 best-print photos ready in:
-  /Users/photographer/events/smith-wedding/BEST_PRINTS
+6. **Export approved photos:**
+   - All approved photos are copied to `BEST_PRINTS/`
+   - Ready for client review or printing
+
+### Via Command Line
+
+```bash
+python analyze_photos.py /path/to/photos --output-csv results.csv
 ```
 
-### CSV Report (`photo_scores.csv`)
-
-| rank | filename        | final_score | sharpness_raw | exposure_score | resolution_mp | contrast_raw | face_count |
-|------|-----------------|-------------|---------------|----------------|---------------|--------------|------------|
-| 1    | DSC_0847.jpg    | 0.8941      | 4821.3        | 0.87           | 24.2          | 61.4         | 3          |
-| 2    | DSC_1203.jpg    | 0.8812      | 4602.7        | 0.91           | 24.2          | 58.9         | 2          |
-| 3    | DSC_0612.jpg    | 0.8754      | 4489.1        | 0.83           | 24.2          | 62.1         | 4          |
+The `BEST_PRINTS` folder will be created in your photo directory with the top 50 images.
 
 ---
 
-## Project Structure
+## 🛠️ Tech Stack
+
+| Component | Purpose |
+|-----------|---------|
+| **Python 3.8+** | Core language |
+| **OpenCV** | Image processing, face detection, Laplacian sharpness |
+| **Pillow (PIL)** | Image loading and manipulation |
+| **NumPy** | Numerical computations and normalization |
+| **Streamlit** | Interactive web UI |
+| **tqdm** | Progress bars for batch operations |
+
+---
+
+## 💼 Use Cases
+
+- 📷 **Wedding Photography Studios** — Rapidly curate albums from 2000+ photos
+- 🎉 **Event Photographers** — Filter high-quality shots from large events
+- ✈️ **Travel Bloggers** — Select print-worthy photos from trips
+- 📚 **Photo Collections** — Organize and rank personal photo archives
+- 🎓 **Photography Students** — Learn computer vision applied to real-world problems
+
+---
+
+## 📊 Sample Output
+
+### CSV Report (`photo_analysis.csv`)
 
 ```
-wedding-photo-analyzer/
-├── analyze_photos.py    # Main analysis script
-├── requirements.txt     # Python dependencies
-├── README.md
-└── .gitignore
+rank,filename,final_score,sharpness_raw,exposure_score,resolution_mp,contrast_raw,face_count,path
+1,photo_001.jpg,0.8432,285.42,0.92,24.3,68.5,2,/path/to/photo_001.jpg
+2,photo_015.jpg,0.8201,278.15,0.89,18.5,72.1,1,/path/to/photo_015.jpg
+3,photo_042.jpg,0.7956,265.30,0.85,21.0,65.3,0,/path/to/photo_042.jpg
+```
+
+### Directory Structure After Export
+
+```
+wedding-photos/
+├── photo_001.jpg
+├── photo_015.jpg
+├── photo_042.jpg
+├── ... (1997 more original photos)
+└── BEST_PRINTS/
+    ├── photo_001.jpg          ← Top 50 curated photos
+    ├── photo_015.jpg
+    └── photo_042.jpg
 ```
 
 ---
 
-## License
+## 🔧 Configuration & Customization
 
-Released under the [MIT License](LICENSE). Free to use, modify, and distribute.
+### Adjust Scoring Weights
+
+Edit the `SCORE_WEIGHTS` dictionary in `app.py` or `analyze_photos.py`:
+
+```python
+SCORE_WEIGHTS = {
+    "sharpness":  0.35,   # Increase for studio work
+    "exposure":   0.25,   # Increase for outdoor shoots
+    "resolution": 0.15,   # Higher for print-focused workflows
+    "contrast":   0.15,
+    "faces":      0.10,   # Increase for portrait-heavy collections
+}
+```
+
+### Change Top-K Export Count
+
+```python
+TOP_K = 50  # Change to 100, 25, etc.
+```
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Areas for enhancement:
+
+- [ ] Additional metrics (color balance, composition, motion blur detection)
+- [ ] Batch processing improvements and parallelization
+- [ ] GUI file browser integration
+- [ ] Cloud storage support (AWS S3, Google Drive)
+- [ ] Advanced filtering by face count, date range, etc.
+- [ ] Dark/light theme toggle in Streamlit UI
+- [ ] Comparison view showing before/after edits
+
+**To contribute:**
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📝 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 📧 Questions & Support
+
+For issues, feature requests, or questions:
+- Open an [Issue](https://github.com/yourusername/wedding-photo-curator/issues)
+- Check [Discussions](https://github.com/yourusername/wedding-photo-curator/discussions)
+
+---
+
+## 🎓 Technical Highlights
+
+This project demonstrates:
+
+- **Computer Vision**: Image analysis using OpenCV Haar Cascades and Laplacian edge detection
+- **Data Normalization**: Min-max scaling across batch datasets
+- **Web Development**: Modern Python web UI with Streamlit
+- **Software Engineering**: Clean architecture, error handling, logging, type hints
+- **Batch Processing**: Efficient recursive file discovery and parallel-safe operations
+- **User Experience**: Intuitive UI design with real-time feedback and progress tracking
+
+---
+
+**Built with ❤️ for photographers and AI enthusiasts**

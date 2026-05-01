@@ -16,9 +16,17 @@ from pathlib import Path
 from typing import Optional
 
 import cv2
+import imagehash
 import numpy as np
+import torch
 from PIL import Image
 from tqdm import tqdm
+
+try:
+    import clip
+    CLIP_AVAILABLE = True
+except ImportError:
+    CLIP_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
@@ -28,15 +36,111 @@ from tqdm import tqdm
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp"}
 
 DEFAULT_TOP_N = 50
+CLIP_SCORE_THRESHOLD = 0.25  # Select photos above this CLIP score
+
+# CLIP prompts for semantic scoring
+CLIP_PROMPTS = [
+    "a beautiful well-lit portrait with great composition",
+    "a sharp focused photo with good lighting",
+    "a candid emotional wedding moment",
+    "a beautiful pose with flattering angle",
+]
+
+CLIP_NEGATIVE_PROMPTS = [
+    "a blurry dark or poorly composed photo",
+]
 
 # Weighted contribution of each metric to the final composite score.
-SCORE_WEIGHTS = {
-    "sharpness":  0.35,   # Most important — blurry photos are unusable
-    "exposure":   0.25,   # Correct exposure is critical for printing
-    "resolution": 0.15,   # Higher MP = more print options
-    "contrast":   0.15,   # Flat contrast looks poor in prints
-    "faces":      0.10,   # Bonus for photos with clearly visible faces
+# CLIP score now carries 50% weight with combined OpenCV metrics at 50%
+SCORE_WEIGHTS_HYBRID = {
+    "clip":       0.50,   # AI semantic understanding
+    "sharpness":  0.20,   # Laplacian edge clarity
+    "exposure":   0.15,   # Histogram-based brightness
+    "resolution": 0.10,   # Megapixels
+    "faces":      0.05,   # Face detection bonus
 }
+
+
+# ---------------------------------------------------------------------------
+# CLIP Model (Semantic Scoring)
+# ---------------------------------------------------------------------------
+
+_clip_model = None
+_clip_preprocess = None
+_clip_device = None
+
+
+def load_clip_model():
+    """Load CLIP model on first use (lazy loading)."""
+    global _clip_model, _clip_preprocess, _clip_device
+    if _clip_model is not None:
+        return _clip_model, _clip_preprocess, _clip_device
+    
+    if not CLIP_AVAILABLE:
+        return None, None, None
+    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    _clip_model = model
+    _clip_preprocess = preprocess
+    _clip_device = device
+    return model, preprocess, device
+
+
+def compute_clip_score(pil_img: Image.Image) -> tuple[float, str]:
+    """
+    Compute CLIP semantic score for an image.
+    Returns (score, best_matching_prompt).
+    Score is positive prompts - negative prompts, normalized to [0, 1].
+    """
+    if not CLIP_AVAILABLE:
+        return 0.5, "CLIP unavailable"
+    
+    try:
+        model, preprocess, device = load_clip_model()
+        if model is None:
+            return 0.5, "CLIP not loaded"
+        
+        # Encode image
+        image_tensor = preprocess(pil_img).unsqueeze(0).to(device)
+        with torch.no_grad():
+            image_features = model.encode_image(image_tensor)
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+        
+        # Encode positive prompts
+        pos_texts = [f"This is {p}" for p in CLIP_PROMPTS]
+        pos_tokens = clip.tokenize(pos_texts).to(device)
+        with torch.no_grad():
+            pos_features = model.encode_text(pos_tokens)
+            pos_features /= pos_features.norm(dim=-1, keepdim=True)
+        
+        # Encode negative prompts
+        neg_texts = [f"This is {p}" for p in CLIP_NEGATIVE_PROMPTS]
+        neg_tokens = clip.tokenize(neg_texts).to(device)
+        with torch.no_grad():
+            neg_features = model.encode_text(neg_tokens)
+            neg_features /= neg_features.norm(dim=-1, keepdim=True)
+        
+        # Compute similarities
+        pos_similarity = image_features @ pos_features.T
+        neg_similarity = image_features @ neg_features.T
+        
+        pos_max = pos_similarity.max().item()
+        neg_max = neg_similarity.max().item() if len(CLIP_NEGATIVE_PROMPTS) > 0 else 0.0
+        
+        # Score: positive - negative, normalized to [0, 1]
+        raw_score = pos_max - (0.3 * neg_max)
+        score = max(0.0, min(1.0, raw_score))
+        
+        # Find best matching positive prompt
+        best_idx = pos_similarity[0].argmax().item()
+        best_prompt = CLIP_PROMPTS[best_idx]
+        
+        return score, best_prompt
+    
+    except Exception as exc:
+        tqdm.write(f"  CLIP scoring error: {exc}")
+        return 0.5, "CLIP error"
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +230,7 @@ def analyse_image(
 
     mp, res_score    = compute_resolution(pil_img)
     face_count, face_score = compute_face_score(gray, cascade)
+    clip_score, clip_prompt = compute_clip_score(pil_img)
 
     return {
         "path":             str(path),
@@ -137,6 +242,8 @@ def analyse_image(
         "contrast_raw":     compute_contrast(gray),
         "face_count":       face_count,
         "face_score":       face_score,
+        "clip_score":       clip_score,
+        "clip_prompt":      clip_prompt,
     }
 
 
@@ -155,7 +262,7 @@ def _minmax_normalise(records: list[dict], key: str, out_key: str) -> None:
 
 def compute_final_scores(records: list[dict]) -> list[dict]:
     """
-    Normalises raw metrics, computes weighted composite scores,
+    Normalises raw metrics, computes weighted hybrid scores (CLIP + OpenCV),
     sorts descending, and adds a 1-based rank to each record.
     """
     _minmax_normalise(records, "sharpness_raw", "sharpness_norm")
@@ -163,11 +270,11 @@ def compute_final_scores(records: list[dict]) -> list[dict]:
 
     for r in records:
         r["final_score"] = round(
-            SCORE_WEIGHTS["sharpness"]  * r["sharpness_norm"]
-            + SCORE_WEIGHTS["exposure"]   * r["exposure_score"]
-            + SCORE_WEIGHTS["resolution"] * r["resolution_score"]
-            + SCORE_WEIGHTS["contrast"]   * r["contrast_norm"]
-            + SCORE_WEIGHTS["faces"]      * r["face_score"],
+            SCORE_WEIGHTS_HYBRID["clip"]       * r["clip_score"]
+            + SCORE_WEIGHTS_HYBRID["sharpness"]  * r["sharpness_norm"]
+            + SCORE_WEIGHTS_HYBRID["exposure"]   * r["exposure_score"]
+            + SCORE_WEIGHTS_HYBRID["resolution"] * r["resolution_score"]
+            + SCORE_WEIGHTS_HYBRID["faces"]      * r["face_score"],
             4,
         )
 
@@ -176,6 +283,88 @@ def compute_final_scores(records: list[dict]) -> list[dict]:
         r["rank"] = rank
 
     return records
+
+
+# ---------------------------------------------------------------------------
+# Diversity Filtering (Near-Duplicate Removal)
+# ---------------------------------------------------------------------------
+
+def compute_perceptual_hash(path: Path) -> Optional[imagehash.ImageHash]:
+    """Compute perceptual hash for an image."""
+    try:
+        pil_img = Image.open(path).convert("RGB")
+        return imagehash.phash(pil_img, hash_size=8)
+    except Exception as exc:
+        tqdm.write(f"  Could not hash {path.name}: {exc}")
+        return None
+
+
+def hash_similarity(hash1: imagehash.ImageHash, hash2: imagehash.ImageHash) -> float:
+    """
+    Compute similarity between two perceptual hashes as a percentage (0-100).
+    Hamming distance 0 = identical (100% similar).
+    Hamming distance 64 = completely different (0% similar).
+    """
+    max_distance = 64  # 8x8 hash = 64 bits
+    hamming_dist = hash1 - hash2
+    similarity = max(0, 100 * (1 - hamming_dist / max_distance))
+    return similarity
+
+
+def filter_similar_photos(records: list[dict], similarity_threshold: float = 90.0) -> list[dict]:
+    """
+    Remove near-duplicate photos, keeping only the highest-scoring from each group.
+    
+    Args:
+        records: Sorted list of photo records (highest score first)
+        similarity_threshold: Minimum similarity % to consider photos as duplicates (0-100)
+    
+    Returns:
+        Filtered list with duplicates removed, maintaining original sort order
+    """
+    if not records:
+        return records
+
+    # Compute hashes for all photos
+    print("\nComputing perceptual hashes for diversity filtering...")
+    hashes = {}
+    for r in tqdm(records, desc="Hashing", unit="file"):
+        path = Path(r["path"])
+        hash_obj = compute_perceptual_hash(path)
+        if hash_obj:
+            hashes[r["path"]] = hash_obj
+
+    # Filter: for each kept photo, remove similar photos with lower scores
+    kept = []
+    removed = set()
+
+    for record in records:
+        if record["path"] in removed:
+            continue
+
+        kept.append(record)
+        kept_hash = hashes.get(record["path"])
+        if not kept_hash:
+            continue
+
+        # Compare against all remaining photos
+        for other_record in records:
+            if other_record["path"] in removed or other_record["path"] == record["path"]:
+                continue
+
+            other_hash = hashes.get(other_record["path"])
+            if not other_hash:
+                continue
+
+            similarity = hash_similarity(kept_hash, other_hash)
+            if similarity >= similarity_threshold:
+                removed.add(other_record["path"])
+
+    duplicate_count = len(records) - len(kept)
+    if duplicate_count > 0:
+        print(f"  Removed {duplicate_count} near-duplicate photos (>{similarity_threshold}% similar)")
+
+    return kept
 
 
 # ---------------------------------------------------------------------------
@@ -212,11 +401,21 @@ def print_top_table(records: list[dict], n: int = 10) -> None:
         ))
 
 
-def copy_best_prints(records: list[dict], photo_dir: Path, n: int) -> None:
+def copy_best_prints(records: list[dict], photo_dir: Path, n: int = None, threshold: float = None) -> None:
+    """
+    Copy best photos to BEST_PRINTS folder.
+    If threshold is set, use threshold-based selection. Otherwise use top-N.
+    """
     dest = photo_dir / "BEST_PRINTS"
     dest.mkdir(exist_ok=True)
-    top = records[:n]
-    print(f"\nCopying top {len(top)} photos  ->  {dest}")
+    
+    if threshold is not None:
+        top = [r for r in records if r["final_score"] >= threshold]
+        print(f"\nCopying {len(top)} photos above score {threshold}  ->  {dest}")
+    else:
+        top = records[:n] if n else records[:DEFAULT_TOP_N]
+        print(f"\nCopying top {len(top)} photos  ->  {dest}")
+    
     for r in tqdm(top, desc="Copying", unit="file"):
         src = Path(r["path"])
         shutil.copy2(src, dest / src.name)
@@ -327,11 +526,18 @@ def main() -> None:
     print(f"\nRanking {len(records)} photos...")
     records = compute_final_scores(records)
 
+    print(f"\nFiltering duplicate photos...")
+    records = filter_similar_photos(records, similarity_threshold=90.0)
+
     write_csv(records, csv_out)
     print_top_table(records)
 
     if not args.no_copy:
-        copy_best_prints(records, args.photo_dir, args.top)
+        # Use threshold-based selection if CLIP is available, else use top-N
+        if CLIP_AVAILABLE:
+            copy_best_prints(records, args.photo_dir, threshold=CLIP_SCORE_THRESHOLD)
+        else:
+            copy_best_prints(records, args.photo_dir, n=args.top)
 
 
 if __name__ == "__main__":
