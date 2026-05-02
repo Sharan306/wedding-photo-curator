@@ -17,32 +17,32 @@ Perfect for **wedding albums**, **event photography**, **travel collections**, a
 
 ## Features
 
-- **AI-Powered Semantic Scoring** — CLIP vision-language model understands photo content (not just technical metrics)
-- **Hybrid Intelligence** — Combines CLIP semantics (50%) with OpenCV metrics (50%)
+- **AI-Powered Aesthetic Scoring** — BLIP image-to-text model analyzes photo captions for quality indicators
+- **Hybrid Intelligence** — Combines BLIP aesthetics (50%) with OpenCV metrics (50%)
 - **Interactive Visual Gallery** — Browse ranked photos with approve/reject controls
-- **AI Insights Per Photo** — "AI says: a candid emotional wedding moment" explains what CLIP sees
-- **Detailed Metrics Display** — CLIP score, sharpness, exposure, resolution, face detection
+- **AI Insights Per Photo** — "AI says: [caption]" explains what BLIP detects in the photo
+- **Detailed Metrics Display** — BLIP score, sharpness, exposure, resolution, face detection
 - **Smart Curation** — Threshold-based selection ensures diverse portfolio, no burst duplicates
 - **Perceptual Deduplication** — Removes near-identical consecutive shots automatically
 - **Native Folder Picker** — macOS Finder integration for seamless file selection
-- **Fully Offline & Free** — No cloud APIs, no subscriptions, runs on CPU or GPU
+- **Fully Offline & Free** — No cloud APIs, no subscriptions, runs on CPU
 - **Production UI** — Beautiful Streamlit app with real-time progress and responsive design
-- **Highly Customizable** — Adjust weights, prompts, thresholds to your workflow
+- **Highly Customizable** — Adjust weights, quality keywords, thresholds to your workflow
 
 ---
 
 ## How It Works
 
-Wedding Photo Curator uses a **hybrid AI approach** combining semantic understanding with computer vision:
+Wedding Photo Curator uses a **hybrid AI approach** combining aesthetic understanding with computer vision:
 
 ### Scoring Pipeline
 
 Each photo is evaluated using:
 
-**1. CLIP Semantic Analysis (50%)**
-- Evaluates against positive prompts: "beautiful well-lit portrait", "candid emotional wedding moment", "sharp focused photo", "flattering angle"
-- Penalizes negatives: "blurry dark poorly composed photo"
-- Returns interpretable AI insight: *"AI says: a candid emotional wedding moment"*
+**1. BLIP Aesthetic Analysis (50%)**
+- Generates image captions using Salesforce's BLIP image-to-text model
+- Scores captions for quality keywords: "sharp", "clear", "beautiful", "well-lit", "portrait", "smile", "focused", "bright", "candid", "emotional"
+- Returns interpretable aesthetic insight: *"AI says: a beautiful, well-lit portrait of smiling couple"*
 
 **2. Computer Vision Metrics (50%)**
 - **Sharpness** (20%) — Laplacian variance for edge clarity
@@ -52,7 +52,7 @@ Each photo is evaluated using:
 
 ### Selection Strategy
 
-- **Threshold-Based** (when CLIP available) — Selects all photos scoring ≥0.25
+- **Threshold-Based** (when BLIP available) — Selects all photos scoring ≥0.25
 - **Diversity Filtering** — Perceptual hashing removes near-duplicates, keeping highest-scoring from each burst
 - **Result** — Portfolio of diverse, high-quality moments (not 50 variations of the same pose)
 
@@ -150,8 +150,9 @@ The `BEST_PRINTS` folder will be created with all photos above the quality thres
 | Component | Purpose |
 |-----------|---------|
 | **Python 3.8+** | Core language |
-| **CLIP (OpenAI)** | Semantic image understanding, vision-language model |
-| **PyTorch** | Deep learning framework for CLIP inference |
+| **BLIP (Salesforce)** | Image-to-text captioning for aesthetic analysis |
+| **Transformers (Hugging Face)** | Model loading and inference framework |
+| **PyTorch** | Deep learning framework for model execution |
 | **OpenCV** | Image processing, face detection, Laplacian sharpness |
 | **Pillow (PIL)** | Image loading and perceptual hashing |
 | **ImageHash** | Perceptual hashing for diversity filtering |
@@ -217,7 +218,7 @@ Edit the `SCORE_WEIGHTS` dictionary in `app.py` or `analyze_photos.py`:
 
 ```python
 SCORE_WEIGHTS_HYBRID = {
-    "clip":       0.50,   # AI semantic understanding (most powerful)
+    "clip":       0.50,   # BLIP aesthetic understanding (most powerful)
     "sharpness":  0.20,   # Laplacian edge clarity
     "exposure":   0.15,   # Histogram-based brightness
     "resolution": 0.10,   # Megapixels
@@ -225,21 +226,23 @@ SCORE_WEIGHTS_HYBRID = {
 }
 ```
 
-### Modify CLIP Prompts
+### Modify Quality Keywords
 
-Customize semantic scoring by editing prompts in `app.py`/`analyze_photos.py`:
+Customize aesthetic scoring by editing keywords in `app.py`/`analyze_photos.py`:
 
 ```python
-CLIP_PROMPTS = [
-    "a beautiful well-lit portrait with great composition",
-    "a candid emotional wedding moment",
-    # Add your own...
-]
-
-CLIP_NEGATIVE_PROMPTS = [
-    "a blurry dark or poorly composed photo",
-    # Add your own...
-]
+BLIP_QUALITY_KEYWORDS = {
+    "sharp": 0.2,
+    "clear": 0.2,
+    "beautiful": 0.3,
+    "well-lit": 0.25,
+    "portrait": 0.15,
+    "smile": 0.15,
+    "focused": 0.2,
+    "bright": 0.15,
+    "candid": 0.15,
+    "emotional": 0.15,
+}
 ```
 
 ### Adjust Similarity Threshold
@@ -300,11 +303,11 @@ For issues, feature requests, or questions:
 
 This project demonstrates advanced computer vision and AI:
 
-- **Vision-Language Model (CLIP)** — Semantic understanding of image content using OpenAI's CLIP
-- **Hybrid Scoring** — Combines AI semantics with traditional computer vision metrics
+- **Image-to-Text Model (BLIP)** — Aesthetic analysis via caption generation (Salesforce's BLIP)
+- **Hybrid Scoring** — Combines AI aesthetic understanding with traditional computer vision metrics
 - **Perceptual Hashing** — Efficient near-duplicate detection (not pixel-perfect matching)
 - **Image Processing** — OpenCV Haar Cascades, Laplacian edge detection, histogram analysis
-- **GPU Acceleration** — Automatic CUDA detection for PyTorch; CPU fallback
+- **CPU-Optimized** — Transformers pipeline optimized for CPU inference; no GPU required
 - **Data Normalization** — Min-max scaling for consistent batch-relative scoring
 - **Modern Web Development** — Streamlit with native OS file dialogs, real-time progress
 - **Production-Grade Code** — Clean architecture, error handling, logging, type hints

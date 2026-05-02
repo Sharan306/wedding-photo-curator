@@ -14,12 +14,14 @@ import streamlit as st
 import torch
 from PIL import Image
 from tkinter import filedialog, Tk
+from transformers import pipeline
 
 try:
-    import clip
-    CLIP_AVAILABLE = True
+    # Test if transformers pipeline works
+    _ = pipeline
+    BLIP_AVAILABLE = True
 except ImportError:
-    CLIP_AVAILABLE = False
+    BLIP_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,17 +31,19 @@ BEST_PRINTS_DIR = "BEST_PRINTS"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp"}
 CLIP_SCORE_THRESHOLD = 0.25
 
-# CLIP prompts for semantic scoring
-CLIP_PROMPTS = [
-    "a beautiful well-lit portrait with great composition",
-    "a sharp focused photo with good lighting",
-    "a candid emotional wedding moment",
-    "a beautiful pose with flattering angle",
-]
-
-CLIP_NEGATIVE_PROMPTS = [
-    "a blurry dark or poorly composed photo",
-]
+# BLIP quality keywords for aesthetic scoring
+BLIP_QUALITY_KEYWORDS = {
+    "sharp": 0.2,
+    "clear": 0.2,
+    "beautiful": 0.3,
+    "well-lit": 0.25,
+    "portrait": 0.15,
+    "smile": 0.15,
+    "focused": 0.2,
+    "bright": 0.15,
+    "candid": 0.15,
+    "emotional": 0.15,
+}
 
 SCORE_WEIGHTS = {
     "clip": 0.50,
@@ -102,78 +106,62 @@ st.markdown(
 
 
 # ============================================================================
-# CLIP Model (Semantic Scoring)
+# BLIP Model (Aesthetic Scoring via Image Captioning)
 # ============================================================================
 
-_clip_model = None
-_clip_preprocess = None
-_clip_device = None
+_blip_pipeline = None
 
 
 @st.cache_resource
-def load_clip_model():
-    """Load CLIP model on first use (lazy loading with caching)."""
-    if not CLIP_AVAILABLE:
-        return None, None, None
-    
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model, preprocess = clip.load("ViT-B/32", device=device)
-    return model, preprocess, device
-
-
-def compute_clip_score(pil_img: Image.Image) -> tuple[float, str]:
-    """
-    Compute CLIP semantic score for an image.
-    Returns (score, best_matching_prompt).
-    """
-    if not CLIP_AVAILABLE:
-        return 0.5, "CLIP unavailable"
+def load_blip_model():
+    """Load BLIP image-to-text pipeline on first use (lazy loading with caching)."""
+    if not BLIP_AVAILABLE:
+        return None
     
     try:
-        model, preprocess, device = load_clip_model()
+        pipeline_model = pipeline(
+            "image-to-text",
+            model="Salesforce/blip-image-captioning-base"
+        )
+        return pipeline_model
+    except Exception as e:
+        logger.warning(f"Failed to load BLIP model: {e}")
+        return None
+
+
+def compute_blip_score(pil_img: Image.Image) -> tuple[float, str]:
+    """
+    Generate image caption using BLIP and score based on quality keywords.
+    Returns (score, caption).
+    """
+    if not BLIP_AVAILABLE:
+        return 0.5, "BLIP unavailable"
+    
+    try:
+        model = load_blip_model()
         if model is None:
-            return 0.5, "CLIP not loaded"
+            return 0.5, "BLIP not loaded"
         
-        # Encode image
-        image_tensor = preprocess(pil_img).unsqueeze(0).to(device)
-        with torch.no_grad():
-            image_features = model.encode_image(image_tensor)
-            image_features /= image_features.norm(dim=-1, keepdim=True)
+        # Generate caption
+        results = model(pil_img)
+        caption = results[0]["generated_text"].lower()
         
-        # Encode positive prompts
-        pos_texts = [f"This is {p}" for p in CLIP_PROMPTS]
-        pos_tokens = clip.tokenize(pos_texts).to(device)
-        with torch.no_grad():
-            pos_features = model.encode_text(pos_tokens)
-            pos_features /= pos_features.norm(dim=-1, keepdim=True)
+        # Score based on presence of quality keywords
+        score = 0.0
+        keyword_sum = sum(BLIP_QUALITY_KEYWORDS.values())
         
-        # Encode negative prompts
-        neg_texts = [f"This is {p}" for p in CLIP_NEGATIVE_PROMPTS]
-        neg_tokens = clip.tokenize(neg_texts).to(device)
-        with torch.no_grad():
-            neg_features = model.encode_text(neg_tokens)
-            neg_features /= neg_features.norm(dim=-1, keepdim=True)
+        for keyword, weight in BLIP_QUALITY_KEYWORDS.items():
+            if keyword in caption:
+                score += weight
         
-        # Compute similarities
-        pos_similarity = image_features @ pos_features.T
-        neg_similarity = image_features @ neg_features.T
+        # Normalize to [0, 1]
+        normalized_score = min(score / keyword_sum, 1.0)
         
-        pos_max = pos_similarity.max().item()
-        neg_max = neg_similarity.max().item() if len(CLIP_NEGATIVE_PROMPTS) > 0 else 0.0
-        
-        # Score: positive - negative, normalized to [0, 1]
-        raw_score = pos_max - (0.3 * neg_max)
-        score = max(0.0, min(1.0, raw_score))
-        
-        # Find best matching positive prompt
-        best_idx = pos_similarity[0].argmax().item()
-        best_prompt = CLIP_PROMPTS[best_idx]
-        
-        return score, best_prompt
+        return normalized_score, caption
     
     except Exception as exc:
-        logger.warning(f"CLIP scoring error: {exc}")
-        return 0.5, "CLIP error"
+        logger.warning(f"BLIP scoring error: {exc}")
+        return 0.5, "BLIP error"
 
 
 # ============================================================================
@@ -242,7 +230,7 @@ def analyse_image(path: Path) -> Optional[Dict]:
 
     mp, res_score = compute_resolution(pil_img)
     face_count, face_score = compute_face_score(gray)
-    clip_score, clip_prompt = compute_clip_score(pil_img)
+    blip_score, blip_caption = compute_blip_score(pil_img)
 
     return {
         "path": str(path),
@@ -254,8 +242,8 @@ def analyse_image(path: Path) -> Optional[Dict]:
         "contrast_raw": compute_contrast(gray),
         "face_count": face_count,
         "face_score": face_score,
-        "clip_score": clip_score,
-        "clip_prompt": clip_prompt,
+        "clip_score": blip_score,
+        "clip_prompt": blip_caption,
     }
 
 
@@ -514,7 +502,7 @@ def display_photo_gallery(results: List[Dict]) -> None:
                 )
 
                 # AI insight
-                if CLIP_AVAILABLE:
+                if BLIP_AVAILABLE:
                     st.caption(f"AI says: {photo_data['clip_prompt']}")
 
                 col_a, col_b = st.columns(2)

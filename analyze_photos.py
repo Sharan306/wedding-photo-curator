@@ -21,12 +21,14 @@ import numpy as np
 import torch
 from PIL import Image
 from tqdm import tqdm
+from transformers import pipeline
 
 try:
-    import clip
-    CLIP_AVAILABLE = True
+    # Test if transformers pipeline works
+    _ = pipeline
+    BLIP_AVAILABLE = True
 except ImportError:
-    CLIP_AVAILABLE = False
+    BLIP_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
@@ -36,24 +38,26 @@ except ImportError:
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp"}
 
 DEFAULT_TOP_N = 50
-CLIP_SCORE_THRESHOLD = 0.25  # Select photos above this CLIP score
+CLIP_SCORE_THRESHOLD = 0.25  # Select photos above this BLIP score
 
-# CLIP prompts for semantic scoring
-CLIP_PROMPTS = [
-    "a beautiful well-lit portrait with great composition",
-    "a sharp focused photo with good lighting",
-    "a candid emotional wedding moment",
-    "a beautiful pose with flattering angle",
-]
-
-CLIP_NEGATIVE_PROMPTS = [
-    "a blurry dark or poorly composed photo",
-]
+# BLIP quality keywords for aesthetic scoring
+BLIP_QUALITY_KEYWORDS = {
+    "sharp": 0.2,
+    "clear": 0.2,
+    "beautiful": 0.3,
+    "well-lit": 0.25,
+    "portrait": 0.15,
+    "smile": 0.15,
+    "focused": 0.2,
+    "bright": 0.15,
+    "candid": 0.15,
+    "emotional": 0.15,
+}
 
 # Weighted contribution of each metric to the final composite score.
-# CLIP score now carries 50% weight with combined OpenCV metrics at 50%
+# BLIP score now carries 50% weight with combined OpenCV metrics at 50%
 SCORE_WEIGHTS_HYBRID = {
-    "clip":       0.50,   # AI semantic understanding
+    "clip":       0.50,   # AI aesthetic understanding
     "sharpness":  0.20,   # Laplacian edge clarity
     "exposure":   0.15,   # Histogram-based brightness
     "resolution": 0.10,   # Megapixels
@@ -62,85 +66,67 @@ SCORE_WEIGHTS_HYBRID = {
 
 
 # ---------------------------------------------------------------------------
-# CLIP Model (Semantic Scoring)
+# BLIP Model (Aesthetic Scoring via Image Captioning)
 # ---------------------------------------------------------------------------
 
-_clip_model = None
-_clip_preprocess = None
-_clip_device = None
+_blip_pipeline = None
 
 
-def load_clip_model():
-    """Load CLIP model on first use (lazy loading)."""
-    global _clip_model, _clip_preprocess, _clip_device
-    if _clip_model is not None:
-        return _clip_model, _clip_preprocess, _clip_device
+def load_blip_model():
+    """Load BLIP image-to-text pipeline on first use (lazy loading)."""
+    global _blip_pipeline
+    if _blip_pipeline is not None:
+        return _blip_pipeline
     
-    if not CLIP_AVAILABLE:
-        return None, None, None
+    if not BLIP_AVAILABLE:
+        return None
     
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model, preprocess = clip.load("ViT-B/32", device=device)
-    _clip_model = model
-    _clip_preprocess = preprocess
-    _clip_device = device
-    return model, preprocess, device
+    try:
+        model = pipeline(
+            "image-to-text",
+            model="Salesforce/blip-image-captioning-base"
+        )
+        _blip_pipeline = model
+        return model
+    except Exception as e:
+        tqdm.write(f"Failed to load BLIP model: {e}")
+        return None
 
 
 def compute_clip_score(pil_img: Image.Image) -> tuple[float, str]:
     """
-    Compute CLIP semantic score for an image.
-    Returns (score, best_matching_prompt).
-    Score is positive prompts - negative prompts, normalized to [0, 1].
+    Generate image caption using BLIP and score based on quality keywords.
+    Returns (score, caption).
+    Note: Function name kept as 'compute_clip_score' for compatibility with existing code.
     """
-    if not CLIP_AVAILABLE:
-        return 0.5, "CLIP unavailable"
+    if not BLIP_AVAILABLE:
+        return 0.5, "BLIP unavailable"
     
     try:
-        model, preprocess, device = load_clip_model()
+        model = load_blip_model()
         if model is None:
-            return 0.5, "CLIP not loaded"
+            return 0.5, "BLIP not loaded"
         
-        # Encode image
-        image_tensor = preprocess(pil_img).unsqueeze(0).to(device)
-        with torch.no_grad():
-            image_features = model.encode_image(image_tensor)
-            image_features /= image_features.norm(dim=-1, keepdim=True)
+        # Generate caption
+        results = model(pil_img)
+        caption = results[0]["generated_text"].lower()
         
-        # Encode positive prompts
-        pos_texts = [f"This is {p}" for p in CLIP_PROMPTS]
-        pos_tokens = clip.tokenize(pos_texts).to(device)
-        with torch.no_grad():
-            pos_features = model.encode_text(pos_tokens)
-            pos_features /= pos_features.norm(dim=-1, keepdim=True)
+        # Score based on presence of quality keywords
+        score = 0.0
+        keyword_sum = sum(BLIP_QUALITY_KEYWORDS.values())
         
-        # Encode negative prompts
-        neg_texts = [f"This is {p}" for p in CLIP_NEGATIVE_PROMPTS]
-        neg_tokens = clip.tokenize(neg_texts).to(device)
-        with torch.no_grad():
-            neg_features = model.encode_text(neg_tokens)
-            neg_features /= neg_features.norm(dim=-1, keepdim=True)
+        for keyword, weight in BLIP_QUALITY_KEYWORDS.items():
+            if keyword in caption:
+                score += weight
         
-        # Compute similarities
-        pos_similarity = image_features @ pos_features.T
-        neg_similarity = image_features @ neg_features.T
+        # Normalize to [0, 1]
+        normalized_score = min(score / keyword_sum, 1.0)
         
-        pos_max = pos_similarity.max().item()
-        neg_max = neg_similarity.max().item() if len(CLIP_NEGATIVE_PROMPTS) > 0 else 0.0
-        
-        # Score: positive - negative, normalized to [0, 1]
-        raw_score = pos_max - (0.3 * neg_max)
-        score = max(0.0, min(1.0, raw_score))
-        
-        # Find best matching positive prompt
-        best_idx = pos_similarity[0].argmax().item()
-        best_prompt = CLIP_PROMPTS[best_idx]
-        
-        return score, best_prompt
+        return normalized_score, caption
     
     except Exception as exc:
-        tqdm.write(f"  CLIP scoring error: {exc}")
-        return 0.5, "CLIP error"
+        tqdm.write(f"  BLIP scoring error: {exc}")
+        return 0.5, "BLIP error"
 
 
 # ---------------------------------------------------------------------------
@@ -533,8 +519,8 @@ def main() -> None:
     print_top_table(records)
 
     if not args.no_copy:
-        # Use threshold-based selection if CLIP is available, else use top-N
-        if CLIP_AVAILABLE:
+        # Use threshold-based selection if BLIP is available, else use top-N
+        if BLIP_AVAILABLE:
             copy_best_prints(records, args.photo_dir, threshold=CLIP_SCORE_THRESHOLD)
         else:
             copy_best_prints(records, args.photo_dir, n=args.top)
