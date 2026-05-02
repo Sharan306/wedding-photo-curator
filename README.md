@@ -24,7 +24,7 @@ Perfect for **wedding albums**, **event photography**, **travel collections**, a
 - **Detailed Metrics Display** — BLIP score, sharpness, exposure, resolution, face detection
 - **Smart Curation** — Threshold-based selection ensures diverse portfolio, no burst duplicates
 - **Perceptual Deduplication** — Removes near-identical consecutive shots automatically
-- **Native Folder Picker** — macOS Finder integration for seamless file selection
+- **Streamlit Cloud Ready** — Deployed serverless with no desktop dependencies
 - **Fully Offline & Free** — No cloud APIs, no subscriptions, runs on CPU
 - **Production UI** — Beautiful Streamlit app with real-time progress and responsive design
 - **Highly Customizable** — Adjust weights, quality keywords, thresholds to your workflow
@@ -86,9 +86,8 @@ Each photo is evaluated using:
 streamlit run app.py
 ```
 Then:
-1. Click **"Browse Folder"** — Opens native macOS Finder picker
-2. Select your photo directory → Auto-fills in sidebar
-3. Click **"Analyze Photos"** — CLIP + OpenCV scoring begins
+1. Enter your photo directory path in the text input
+2. Click **"Analyze Photos"** — BLIP + OpenCV scoring begins
 4. **Review** the AI-powered gallery with insights
 5. **Approve/Reject** photos and export
 
@@ -111,9 +110,8 @@ Outputs:
    streamlit run app.py
    ```
 
-2. **Select your photo folder:**
-   - Click "Browse Folder" for native macOS Finder dialog
-   - Or manually paste folder path into text input
+2. **Enter your photo folder path:**
+   - Paste the folder path in the text input field
 
 3. **Analyze:**
    - Click "Analyze Photos"

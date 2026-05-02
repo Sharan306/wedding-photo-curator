@@ -13,7 +13,6 @@ import numpy as np
 import streamlit as st
 import torch
 from PIL import Image
-from tkinter import filedialog, Tk
 from transformers import pipeline
 
 try:
@@ -383,22 +382,6 @@ def initialize_session_state() -> None:
         st.session_state.folder_path = ""
 
 
-def open_folder_picker() -> str:
-    """Open native macOS Finder folder picker using tkinter."""
-    try:
-        root = Tk()
-        root.withdraw()  # Hide the tkinter window
-        root.attributes('-topmost', True)  # Bring dialog to front
-        folder_path = filedialog.askdirectory(
-            title="Select Wedding Photos Folder",
-            initialdir=st.session_state.folder_path or str(Path.home()),
-        )
-        root.destroy()
-        return folder_path
-    except Exception as exc:
-        logger.error(f"Folder picker error: {exc}")
-        return ""
-
 
 def evaluate_image_batch(image_paths: List[Path]) -> List[Dict]:
     """Evaluate a batch of images and return scored results."""
@@ -574,14 +557,6 @@ def main() -> None:
             value=st.session_state.folder_path,
             placeholder="/path/to/wedding/photos",
         )
-
-        if st.button("Browse Folder", use_container_width=True):
-            selected_folder = open_folder_picker()
-            if selected_folder:
-                st.session_state.folder_path = selected_folder
-                st.rerun()
-            else:
-                st.warning("No folder selected.")
 
         st.markdown("---")
 
