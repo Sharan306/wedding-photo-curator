@@ -1,102 +1,54 @@
-"""Streamlit web application for AI-powered wedding photo curation."""
+"""
+Streamlit web application for quality-first wedding photo curation.
+Displays curated photos that passed hard rejections and diversity filtering.
+"""
 
-from __future__ import annotations
-
-import logging
+import json
 import shutil
+import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional
 
-import cv2
-import imagehash
-import numpy as np
 import streamlit as st
-import torch
 from PIL import Image
-from transformers import pipeline
-
-try:
-    # Test if transformers pipeline works
-    _ = pipeline
-    BLIP_AVAILABLE = True
-except ImportError:
-    BLIP_AVAILABLE = False
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Configuration
 BEST_PRINTS_DIR = "BEST_PRINTS"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp"}
-CLIP_SCORE_THRESHOLD = 0.25
-
-# BLIP quality keywords for aesthetic scoring
-BLIP_QUALITY_KEYWORDS = {
-    "sharp": 0.2,
-    "clear": 0.2,
-    "beautiful": 0.3,
-    "well-lit": 0.25,
-    "portrait": 0.15,
-    "smile": 0.15,
-    "focused": 0.2,
-    "bright": 0.15,
-    "candid": 0.15,
-    "emotional": 0.15,
-}
-
-SCORE_WEIGHTS = {
-    "clip": 0.50,
-    "sharpness": 0.20,
-    "exposure": 0.15,
-    "resolution": 0.10,
-    "faces": 0.05,
-}
+CACHE_FILE = "photo_analysis_cache.json"
+CURATION_FILE = "photo_curation.csv"
 
 # Streamlit page configuration
 st.set_page_config(
     page_title="Wedding Photo Curator",
-    page_icon="📸",
+    page_icon="💍",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS for enhanced styling
 st.markdown(
     """
     <style>
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
+    .photo-gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
     }
     .photo-card {
         background-color: white;
-        border: 1px solid #e0e0e0;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        text-align: center;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
     }
-    .rank-badge {
-        background-color: #0d47a1;
-        color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 0.25rem;
-        font-weight: bold;
-        display: inline-block;
-        margin: 0.5rem 0;
+    .photo-card:hover {
+        transform: scale(1.02);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
-    .score-high {
-        color: #2e7d32;
-        font-weight: bold;
-    }
-    .score-medium {
-        color: #f57f17;
-        font-weight: bold;
-    }
-    .score-low {
-        color: #c62828;
-        font-weight: bold;
+    .photo-card img {
+        width: 100%;
+        height: 250px;
+        object-fit: cover;
     }
     </style>
     """,
@@ -104,454 +56,57 @@ st.markdown(
 )
 
 
-# ============================================================================
-# BLIP Model (Aesthetic Scoring via Image Captioning)
-# ============================================================================
-
-_blip_pipeline = None
-
-
-@st.cache_resource
-def load_blip_model():
-    """Load BLIP image-to-text pipeline on first use (lazy loading with caching)."""
-    if not BLIP_AVAILABLE:
-        return None
-    
-    try:
-        pipeline_model = pipeline(
-            "image-to-text",
-            model="Salesforce/blip-image-captioning-base"
-        )
-        return pipeline_model
-    except Exception as e:
-        logger.warning(f"Failed to load BLIP model: {e}")
-        return None
-
-
-def compute_blip_score(pil_img: Image.Image) -> tuple[float, str]:
-    """
-    Generate image caption using BLIP and score based on quality keywords.
-    Returns (score, caption).
-    """
-    if not BLIP_AVAILABLE:
-        return 0.5, "BLIP unavailable"
-    
-    try:
-        model = load_blip_model()
-        if model is None:
-            return 0.5, "BLIP not loaded"
-        
-        # Generate caption
-        results = model(pil_img)
-        caption = results[0]["generated_text"].lower()
-        
-        # Score based on presence of quality keywords
-        score = 0.0
-        keyword_sum = sum(BLIP_QUALITY_KEYWORDS.values())
-        
-        for keyword, weight in BLIP_QUALITY_KEYWORDS.items():
-            if keyword in caption:
-                score += weight
-        
-        # Normalize to [0, 1]
-        normalized_score = min(score / keyword_sum, 1.0)
-        
-        return normalized_score, caption
-    
-    except Exception as exc:
-        logger.warning(f"BLIP scoring error: {exc}")
-        return 0.5, "BLIP error"
-
-
-# ============================================================================
-# Scoring Functions
-# ============================================================================
-
-def compute_sharpness(gray: np.ndarray) -> float:
-    """Laplacian variance — measures edge sharpness."""
-    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
-
-
-def compute_exposure(gray: np.ndarray) -> float:
-    """Exposure quality score in [0, 1]."""
-    hist = cv2.calcHist([gray], [0], None, [256], [0, 256]).ravel()
-    total = hist.sum()
-    if total == 0:
-        return 0.0
-
-    hist_norm = hist / total
-    shadow_clip = hist_norm[:15].sum()
-    highlight_clip = hist_norm[240:].sum()
-
-    brightness_score = 1.0 - abs(gray.mean() - 128.0) / 128.0
-    clip_penalty = (shadow_clip + highlight_clip) * 2.0
-
-    return float(max(0.0, brightness_score - clip_penalty))
-
-
-def compute_resolution(pil_image: Image.Image) -> tuple[float, float]:
-    """Returns (megapixels, normalised_score)."""
-    w, h = pil_image.size
-    mp = (w * h) / 1_000_000
-    return round(mp, 2), min(mp / 24.0, 1.0)
-
-
-def compute_contrast(gray: np.ndarray) -> float:
-    """Standard deviation of pixel intensities."""
-    return float(gray.std())
-
-
-def compute_face_score(gray: np.ndarray) -> tuple[int, float]:
-    """Returns (face_count, normalised_score in [0, 1])."""
-    try:
-        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        cascade = cv2.CascadeClassifier(cascade_path)
-        if cascade.empty():
-            return 0, 0.0
-        faces = cascade.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30)
-        )
-        count = int(len(faces))
-        return count, min(count * 0.25, 1.0)
-    except Exception:
-        return 0, 0.0
-
-
-def analyse_image(path: Path) -> Optional[Dict]:
-    """Load image and compute all raw metrics."""
-    try:
-        pil_img = Image.open(path).convert("RGB")
-        cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-        gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-    except Exception as exc:
-        logger.warning(f"Skipping {path.name}: {exc}")
-        return None
-
-    mp, res_score = compute_resolution(pil_img)
-    face_count, face_score = compute_face_score(gray)
-    blip_score, blip_caption = compute_blip_score(pil_img)
-
-    return {
-        "path": str(path),
-        "filename": path.name,
-        "sharpness_raw": compute_sharpness(gray),
-        "exposure_score": compute_exposure(gray),
-        "resolution_mp": mp,
-        "resolution_score": res_score,
-        "contrast_raw": compute_contrast(gray),
-        "face_count": face_count,
-        "face_score": face_score,
-        "clip_score": blip_score,
-        "clip_prompt": blip_caption,
-    }
-
-
-def _minmax_normalise(records: list[dict], key: str, out_key: str) -> None:
-    """Min-max normalise a column across the batch."""
-    values = [r[key] for r in records]
-    lo, hi = min(values), max(values)
-    spread = hi - lo or 1.0
-    for r in records:
-        r[out_key] = (r[key] - lo) / spread
-
-
-def compute_final_scores(records: list[dict]) -> list[dict]:
-    """Normalises raw metrics, computes weighted hybrid scores (CLIP + OpenCV), and ranks."""
-    _minmax_normalise(records, "sharpness_raw", "sharpness_norm")
-    _minmax_normalise(records, "contrast_raw", "contrast_norm")
-
-    for r in records:
-        r["final_score"] = round(
-            SCORE_WEIGHTS["clip"] * r["clip_score"]
-            + SCORE_WEIGHTS["sharpness"] * r["sharpness_norm"]
-            + SCORE_WEIGHTS["exposure"] * r["exposure_score"]
-            + SCORE_WEIGHTS["resolution"] * r["resolution_score"]
-            + SCORE_WEIGHTS["faces"] * r["face_score"],
-            4,
-        )
-
-    records.sort(key=lambda x: x["final_score"], reverse=True)
-    for rank, r in enumerate(records, start=1):
-        r["rank"] = rank
-
-    return records
-
-
 def scan_images(photo_dir: Path) -> list[Path]:
     """Recursively find all supported images."""
     return sorted(
-        p for p in photo_dir.rglob("*")
+        p
+        for p in photo_dir.rglob("*")
         if p.suffix.lower() in SUPPORTED_EXTENSIONS
-        and "BEST_PRINTS" not in p.parts
+        and BEST_PRINTS_DIR not in p.parts
     )
 
 
-# ============================================================================
-# Diversity Filtering (Near-Duplicate Removal)
-# ============================================================================
+def load_curation_results(curation_csv: Path) -> list[dict]:
+    """Load curation results from CSV."""
+    import csv
 
-def compute_perceptual_hash(path: Path) -> Optional[imagehash.ImageHash]:
-    """Compute perceptual hash for an image."""
+    if not curation_csv.exists():
+        return []
+
     try:
-        pil_img = Image.open(path).convert("RGB")
-        return imagehash.phash(pil_img, hash_size=8)
-    except Exception as exc:
-        logger.warning(f"Could not hash {path.name}: {exc}")
-        return None
+        with open(curation_csv, encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            return list(reader)
+    except Exception:
+        return []
 
 
-def hash_similarity(hash1: imagehash.ImageHash, hash2: imagehash.ImageHash) -> float:
-    """
-    Compute similarity between two perceptual hashes as a percentage (0-100).
-    Hamming distance 0 = identical (100% similar).
-    Hamming distance 64 = completely different (0% similar).
-    """
-    max_distance = 64  # 8x8 hash = 64 bits
-    hamming_dist = hash1 - hash2
-    similarity = max(0, 100 * (1 - hamming_dist / max_distance))
-    return similarity
-
-
-def filter_similar_photos(records: list[dict], similarity_threshold: float = 90.0) -> list[dict]:
-    """
-    Remove near-duplicate photos, keeping only the highest-scoring from each group.
-    
-    Args:
-        records: Sorted list of photo records (highest score first)
-        similarity_threshold: Minimum similarity % to consider photos as duplicates (0-100)
-    
-    Returns:
-        Filtered list with duplicates removed, maintaining original sort order
-    """
-    if not records:
-        return records
-
-    # Compute hashes for all photos
-    hashes = {}
-    for r in records:
-        path = Path(r["path"])
-        hash_obj = compute_perceptual_hash(path)
-        if hash_obj:
-            hashes[r["path"]] = hash_obj
-
-    # Filter: for each kept photo, remove similar photos with lower scores
-    kept = []
-    removed = set()
-
-    for record in records:
-        if record["path"] in removed:
-            continue
-
-        kept.append(record)
-        kept_hash = hashes.get(record["path"])
-        if not kept_hash:
-            continue
-
-        # Compare against all remaining photos
-        for other_record in records:
-            if other_record["path"] in removed or other_record["path"] == record["path"]:
-                continue
-
-            other_hash = hashes.get(other_record["path"])
-            if not other_hash:
-                continue
-
-            similarity = hash_similarity(kept_hash, other_hash)
-            if similarity >= similarity_threshold:
-                removed.add(other_record["path"])
-
-    duplicate_count = len(records) - len(kept)
-    if duplicate_count > 0:
-        logger.info(f"Filtered {duplicate_count} near-duplicate photos")
-
-    return kept
-
-
-# ============================================================================
-# Streamlit UI
-# ============================================================================
-
-
-def initialize_session_state() -> None:
-    """Initialize Streamlit session state variables."""
-    if "analysis_results" not in st.session_state:
-        st.session_state.analysis_results = None
-    if "approved_photos" not in st.session_state:
-        st.session_state.approved_photos = set()
+def initialize_session_state():
+    """Initialize Streamlit session state."""
     if "folder_path" not in st.session_state:
         st.session_state.folder_path = ""
+    if "curation_results" not in st.session_state:
+        st.session_state.curation_results = []
+    if "is_analyzing" not in st.session_state:
+        st.session_state.is_analyzing = False
 
 
-
-def evaluate_image_batch(image_paths: List[Path]) -> List[Dict]:
-    """Evaluate a batch of images and return scored results."""
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-
-    raw_results = []
-    for index, image_path in enumerate(image_paths):
-        try:
-            metrics = analyse_image(image_path)
-            if metrics:
-                raw_results.append(metrics)
-            progress = (index + 1) / len(image_paths)
-            progress_bar.progress(progress)
-            status_text.text(f"Analyzed {index + 1} / {len(image_paths)} photos")
-        except Exception as exc:
-            logger.warning("Unable to analyze %s: %s", image_path, exc)
-
-    progress_bar.empty()
-    status_text.empty()
-
-    # Compute final scores
-    if raw_results:
-        results = compute_final_scores(raw_results)
-        # Filter near-duplicate photos for diversity
-        results = filter_similar_photos(results, similarity_threshold=90.0)
-    else:
-        results = []
-
-    return results
-
-
-def get_score_class(score: float) -> str:
-    """Return CSS class based on score value."""
-    if score >= 0.7:
-        return "score-high"
-    elif score >= 0.5:
-        return "score-medium"
-    return "score-low"
-
-
-def display_summary_stats(results: List[Dict]) -> None:
-    """Display summary statistics from the analysis."""
-    scores = [r["final_score"] for r in results]
-    total_analyzed = len(results)
-    top_score = max(scores) if scores else 0
-    avg_score = sum(scores) / len(scores) if scores else 0
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Analyzed", total_analyzed)
-    with col2:
-        st.metric("Top Score", f"{top_score:.4f}")
-    with col3:
-        st.metric("Average Score", f"{avg_score:.4f}")
-
-
-def display_photo_gallery(results: List[Dict]) -> None:
-    """Display ranked photos in a gallery grid with selection toggles."""
-    results_sorted = sorted(results, key=lambda x: x["final_score"], reverse=True)
-
-    st.subheader("Photo Gallery")
-    st.markdown("---")
-
-    cols_per_row = 3
-    for rank_idx in range(0, len(results_sorted), cols_per_row):
-        cols = st.columns(cols_per_row)
-        for col_idx, col in enumerate(cols):
-            actual_idx = rank_idx + col_idx
-            if actual_idx >= len(results_sorted):
-                break
-
-            photo_data = results_sorted[actual_idx]
-            photo_id = str(photo_data["path"])
-
-            with col:
-                st.markdown(
-                    '<div class="photo-card">',
-                    unsafe_allow_html=True,
-                )
-
-                # Rank badge
-                st.markdown(
-                    f'<span class="rank-badge">#{actual_idx + 1}</span>',
-                    unsafe_allow_html=True,
-                )
-
-                # Thumbnail
-                try:
-                    image = Image.open(photo_data["path"])
-                    image.thumbnail((300, 300), Image.Resampling.LANCZOS)
-                    st.image(image, use_column_width=True)
-                except Exception as exc:
-                    st.warning(f"Unable to load thumbnail: {exc}")
-
-                # Metrics
-                score_class = get_score_class(photo_data["final_score"])
-                st.markdown(
-                    f'<p class="{score_class}">Score: {photo_data["final_score"]:.4f}</p>',
-                    unsafe_allow_html=True,
-                )
-
-                # AI insight
-                if BLIP_AVAILABLE:
-                    st.caption(f"AI says: {photo_data['clip_prompt']}")
-
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.metric(
-                        "Sharpness",
-                        f"{photo_data['sharpness_raw']:.2f}",
-                        label_visibility="collapsed",
-                    )
-                with col_b:
-                    st.metric(
-                        "Faces",
-                        f"{photo_data['face_count']}",
-                        label_visibility="collapsed",
-                    )
-
-                st.caption(f"📊 Resolution: {photo_data['resolution_mp']:.1f} MP")
-
-                # Approve/Reject buttons
-                col_approve, col_reject = st.columns(2)
-                with col_approve:
-                    if st.checkbox("✓ Approve", key=f"approve_{photo_id}"):
-                        st.session_state.approved_photos.add(photo_id)
-                    else:
-                        st.session_state.approved_photos.discard(photo_id)
-
-                with col_reject:
-                    if st.checkbox("✗ Reject", key=f"reject_{photo_id}"):
-                        st.session_state.approved_photos.discard(photo_id)
-
-                st.markdown("</div>", unsafe_allow_html=True)
-
-
-def export_approved_photos(root_path: Path) -> None:
-    """Copy approved photos to the BEST_PRINTS folder."""
-    destination = root_path / BEST_PRINTS_DIR
-    destination.mkdir(parents=True, exist_ok=True)
-
-    export_count = 0
-    for photo_id in st.session_state.approved_photos:
-        source_path = Path(photo_id)
-        if source_path.exists():
-            target_path = destination / source_path.name
-            if target_path.exists():
-                target_path = (
-                    destination / f"{source_path.stem}_approved{source_path.suffix}"
-                )
-            shutil.copy2(source_path, target_path)
-            export_count += 1
-
-    st.success(f"✓ Exported {export_count} approved photos to {destination}")
-    logger.info("Exported %s approved photos to %s", export_count, destination)
-
-
-def main() -> None:
+def main():
     """Main Streamlit application."""
     initialize_session_state()
 
     # Header
-    st.title("Wedding Photo Curator")
-    st.markdown("AI-powered wedding photo selection and ranking system")
+    st.title("💍 Wedding Photo Curator")
+    st.markdown(
+        "**Quality-first photo curation**: Selects only truly great photos using hard rejection rules and diversity filtering."
+    )
     st.markdown("---")
 
-    # Sidebar for configuration
+    # Sidebar
     with st.sidebar:
-        st.header("Configuration")
+        st.header("🔧 Configuration")
+
+        # Folder path input
         folder_input = st.text_input(
             "Enter photo folder path:",
             value=st.session_state.folder_path,
@@ -560,7 +115,8 @@ def main() -> None:
 
         st.markdown("---")
 
-        if st.button("Analyze Photos", type="primary", use_container_width=True):
+        # Analyze button
+        if st.button("🚀 Analyze & Curate Photos", type="primary", use_container_width=True):
             if not folder_input:
                 st.error("Please enter a folder path.")
             else:
@@ -568,46 +124,124 @@ def main() -> None:
                 if not folder_path.exists() or not folder_path.is_dir():
                     st.error(f"Folder not found: {folder_path}")
                 else:
-                    image_paths = scan_images(folder_path)
-                    if not image_paths:
+                    images = scan_images(folder_path)
+                    if not images:
                         st.warning("No supported images found in the folder.")
                     else:
-                        st.info(f"Found {len(image_paths)} images. Starting analysis...")
-                        results = evaluate_image_batch(image_paths)
-                        st.session_state.analysis_results = results
-                        st.session_state.folder_path = folder_input
-                        st.session_state.approved_photos = set()
-                        st.success("Analysis complete!")
+                        # Run analysis
+                        st.info(f"Found {len(images)} images. Running curation analysis...")
+
+                        try:
+                            # Call analyze_photos.py
+                            result = subprocess.run(
+                                ["python", "analyze_photos.py", str(folder_path)],
+                                cwd=Path(__file__).parent,
+                                capture_output=True,
+                                text=True,
+                                timeout=600,
+                            )
+
+                            if result.returncode == 0:
+                                # Load results
+                                curation_csv = folder_path / CURATION_FILE
+                                results = load_curation_results(curation_csv)
+                                st.session_state.curation_results = results
+                                st.session_state.folder_path = folder_input
+                                st.success(f"✓ Curation complete! Selected {len(results)} photos.")
+                                st.rerun()
+                            else:
+                                st.error(f"Analysis failed: {result.stderr}")
+                        except subprocess.TimeoutExpired:
+                            st.error("Analysis timed out (over 10 minutes).")
+                        except Exception as e:
+                            st.error(f"Error during analysis: {e}")
 
     # Main content
-    if st.session_state.analysis_results:
-        results = st.session_state.analysis_results
+    if st.session_state.curation_results:
+        results = st.session_state.curation_results
+        total_photos = len(scan_images(Path(st.session_state.folder_path)))
 
-        # Summary statistics
-        st.subheader("Analysis Summary")
-        display_summary_stats(results)
+        # Summary
+        st.subheader("✨ Curation Summary")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Analyzed", total_photos)
+        with col2:
+            st.metric("Selected Curated", len(results))
+        with col3:
+            percentage = (len(results) / total_photos * 100) if total_photos > 0 else 0
+            st.metric("Selection Rate", f"{percentage:.1f}%")
+
+        st.markdown(f"**Selected {len(results)} truly great photos from {total_photos} analyzed.**")
         st.markdown("---")
 
-        # Photo gallery
-        display_photo_gallery(results)
-        st.markdown("---")
+        # Gallery
+        st.subheader("🖼️ Curated Photo Gallery")
+
+        cols_per_row = 4
+        for i in range(0, len(results), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for col_idx, col in enumerate(cols):
+                if i + col_idx >= len(results):
+                    break
+
+                result = results[i + col_idx]
+                photo_path = Path(result["path"])
+
+                try:
+                    with col:
+                        # Display image
+                        image = Image.open(photo_path)
+                        st.image(image, use_column_width=True)
+
+                        # Show rank
+                        rank = result.get("rank", "?")
+                        st.caption(f"**#{rank}** · {result.get('filename', 'Unknown')}")
+
+                except Exception as e:
+                    with col:
+                        st.warning(f"Could not load: {e}")
 
         # Export section
-        st.subheader("Export Approved Photos")
-        approved_count = len(st.session_state.approved_photos)
-        st.info(f"Currently selected: {approved_count} photos")
+        st.markdown("---")
+        st.subheader("💾 Export Selected Photos")
 
-        if approved_count > 0:
-            if st.button(
-                f"Export {approved_count} Approved Photos",
-                type="primary",
-                use_container_width=True,
-            ):
-                export_approved_photos(Path(st.session_state.folder_path))
-        else:
-            st.warning("Select photos to approve before exporting.")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📥 Copy to BEST_PRINTS", use_container_width=True):
+                try:
+                    folder_path = Path(st.session_state.folder_path)
+                    dest = folder_path / BEST_PRINTS_DIR
+                    dest.mkdir(exist_ok=True)
+
+                    # Copy all selected photos
+                    for result in results:
+                        src = Path(result["path"])
+                        if src.exists():
+                            shutil.copy2(src, dest / src.name)
+
+                    st.success(f"✓ Copied {len(results)} photos to {BEST_PRINTS_DIR}/")
+                except Exception as e:
+                    st.error(f"Export failed: {e}")
+
+        with col2:
+            if st.button("📊 Download CSV Report", use_container_width=True):
+                try:
+                    folder_path = Path(st.session_state.folder_path)
+                    csv_file = folder_path / CURATION_FILE
+                    if csv_file.exists():
+                        with open(csv_file, "rb") as f:
+                            st.download_button(
+                                label="Download photo_curation.csv",
+                                data=f.read(),
+                                file_name="photo_curation.csv",
+                                mime="text/csv",
+                            )
+                except Exception as e:
+                    st.error(f"Download failed: {e}")
+
     else:
-        st.info("Enter a folder path and click 'Analyze Photos' to get started.")
+        st.info("👈 Enter a folder path and click 'Analyze & Curate Photos' to get started.")
 
 
 if __name__ == "__main__":
