@@ -4,6 +4,7 @@ Displays curated photos that passed hard rejections and diversity filtering.
 """
 
 import json
+import sys
 import shutil
 import subprocess
 from pathlib import Path
@@ -134,7 +135,7 @@ def main():
                         try:
                             # Call analyze_photos.py
                             result = subprocess.run(
-                                ["python", "analyze_photos.py", str(folder_path)],
+                                [sys.executable, "analyze_photos.py", str(folder_path)],
                                 cwd=Path(__file__).parent,
                                 capture_output=True,
                                 text=True,
