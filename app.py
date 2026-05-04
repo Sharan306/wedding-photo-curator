@@ -105,7 +105,7 @@ def main():
 
     # Sidebar
     with st.sidebar:
-        st.header("🔧 Configuration")
+        st.header("Configuration")
 
         # Folder path input
         folder_input = st.text_input(
@@ -163,7 +163,7 @@ def main():
         total_photos = len(scan_images(Path(st.session_state.folder_path)))
 
         # Summary
-        st.subheader("✨ Curation Summary")
+        st.subheader("Curation Summary")
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Total Analyzed", total_photos)
@@ -177,7 +177,7 @@ def main():
         st.markdown("---")
 
         # Gallery
-        st.subheader("🖼️ Curated Photo Gallery")
+        st.subheader("Curated Photo Gallery")
 
         cols_per_row = 4
         for i in range(0, len(results), cols_per_row):
@@ -205,7 +205,7 @@ def main():
 
         # Export section
         st.markdown("---")
-        st.subheader("💾 Export Selected Photos")
+        st.subheader("Export Selected Photos")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -242,7 +242,7 @@ def main():
                     st.error(f"Download failed: {e}")
 
     else:
-        st.info("👈 Enter a folder path and click 'Analyze & Curate Photos' to get started.")
+        st.info("Enter a folder path and click 'Analyze and Curate Photos' to get started.")
 
 
 if __name__ == "__main__":
