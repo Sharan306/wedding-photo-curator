@@ -21,7 +21,7 @@ CURATION_FILE = "photo_curation.csv"
 # Streamlit page configuration
 st.set_page_config(
     page_title="Wedding Photo Curator",
-    page_icon="💍",
+    page_icon="image",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -97,7 +97,7 @@ def main():
     initialize_session_state()
 
     # Header
-    st.title("💍 Wedding Photo Curator")
+    st.title("Wedding Photo Curator")
     st.markdown(
         "**Quality-first photo curation**: Selects only truly great photos using hard rejection rules and diversity filtering."
     )
@@ -117,7 +117,7 @@ def main():
         st.markdown("---")
 
         # Analyze button
-        if st.button("🚀 Analyze & Curate Photos", type="primary", use_container_width=True):
+        if st.button("Analyze and Curate Photos", type="primary", use_container_width=True):
             if not folder_input:
                 st.error("Please enter a folder path.")
             else:
@@ -209,7 +209,7 @@ def main():
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📥 Copy to BEST_PRINTS", use_container_width=True):
+            if st.button("Copy to BEST_PRINTS", use_container_width=True):
                 try:
                     folder_path = Path(st.session_state.folder_path)
                     dest = folder_path / BEST_PRINTS_DIR
@@ -226,7 +226,7 @@ def main():
                     st.error(f"Export failed: {e}")
 
         with col2:
-            if st.button("📊 Download CSV Report", use_container_width=True):
+            if st.button("Download CSV Report", use_container_width=True):
                 try:
                     folder_path = Path(st.session_state.folder_path)
                     csv_file = folder_path / CURATION_FILE
