@@ -1,0 +1,95 @@
+name: CI - Python Syntax and Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  syntax-check:
+    name: Python Syntax Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Check Python syntax
+      run: |
+        python -m py_compile analyze_photos.py
+        python -m py_compile app.py
+
+    - name: Verify no emojis in Python files
+      run: |
+        if grep -E '[🀀-🿿]' *.py; then
+          echo "Error: Found emojis in Python files"
+          exit 1
+        else
+          echo "No emojis found - check passed"
+        fi
+
+  readme-check:
+    name: README Documentation Check
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Check README structure
+      run: |
+        grep -q "## Installation" README.md || echo "Warning: No Installation section"
+        grep -q "## Usage" README.md || echo "Warning: No Usage section"
+        grep -q "## Technical" README.md || echo "Warning: No Technical section"
+
+    - name: Verify no emojis in README
+      run: |
+        if grep -E '[🀀-🿿]' README.md; then
+          echo "Error: Found emojis in README"
+          exit 1
+        else
+          echo "No emojis found in README - check passed"
+        fi
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pylint flake8
+
+    - name: Lint with flake8
+      continue-on-error: true
+      run: |
+        flake8 analyze_photos.py app.py --max-line-length=100 --count
+
+    - name: Check trailing whitespace
+      run: |
+        if grep -r '[[:space:]]$' *.py README.md *.md; then
+          echo "Warning: Found trailing whitespace"
+        else
+          echo "No trailing whitespace found"
+        fi
